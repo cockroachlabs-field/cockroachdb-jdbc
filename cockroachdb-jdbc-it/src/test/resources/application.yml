@@ -1,0 +1,19 @@
+spring:
+  profiles:
+    active:
+  datasource:
+    url: "jdbc:cockroachdb://localhost:26257/jdbc_test?sslmode=disable"
+    driver-class-name: io.cockroachdb.jdbc.CockroachDriver
+    username: root
+    password:
+    hikari:
+      maximum-pool-size: 25
+      minimum-idle: 5
+      max-lifetime: 1800000
+      connection-timeout: 10000
+  jpa:
+    open-in-view: false
+logging:
+  pattern:
+    console: "%clr(%d{${LOG_DATEFORMAT_PATTERN:HH:mm:ss.SSS}}){faint} %clr(${LOG_LEVEL_PATTERN:%5p}) %clr([%15.15t]){faint} %clr([%X{retry.connection}]){faint} %clr([%logger{15}]){cyan} %m%n${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"
+    file: "%d{${LOG_DATEFORMAT_PATTERN:yyyy-MM-dd HH:mm:ss.SSS}} ${LOG_LEVEL_PATTERN:%5p} [%t] %logger{39} : %m%n${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"
