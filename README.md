@@ -1,6 +1,6 @@
 # CockroachDB JDBC Driver
 
-[![Java CI](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml/badge.svg?branch=main)](https://github.com/cockroachdb/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
+[![Java CI](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml/badge.svg?branch=main)](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
 [![coverage](.github/badges/jacoco.svg)](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
 [![branches coverage](.github/badges/branches.svg)](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
 
