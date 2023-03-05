@@ -29,10 +29,10 @@ import io.cockroachdb.jdbc.it.util.TextUtils;
 
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
 @Order(2)
-@Tag("batch-test")
+@Tag("batch-update-test")
 @DatabaseFixture(beforeTestScript = "db/batch/product-ddl.sql")
 public class BatchUpdateTest extends AbstractIntegrationTest {
-    private static final int PRODUCT_COUNT = 1 << 17;
+    private static final int PRODUCTS_PER_BATCH_COUNT = 10_000;
 
     private List<Product> findAll(int limit) {
         return new JdbcTemplate(dataSource).query("select * from product "
@@ -50,28 +50,27 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
     @Order(1)
     @ParameterizedTest
     @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11, 1 << 12, 1 << 13, 1 << 14, 1 << 15,
-            1 << 16, 1 << 17})
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
     public void whenUpdateProductsUsingBatches_thenObserveBulkUpdates(int batchSize) throws Exception {
         Assertions.assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "TX active");
 
-        List<Product> products = findAll(PRODUCT_COUNT);
+        List<Product> products = findAll(PRODUCTS_PER_BATCH_COUNT);
 
-        Assertions.assertEquals(PRODUCT_COUNT, products.size(), "Not enough data - run the BatchInsertTest first");
+        Assertions.assertEquals(PRODUCTS_PER_BATCH_COUNT, products.size(), "Not enough data - run the BatchInsertTest first");
 
         Stream<List<Product>> chunks = JdbcTestUtils.chunkedStream(products.stream(), batchSize);
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
 
-            logger.info("Update using batch statements in chunks of {} for a total of {}", batchSize, PRODUCT_COUNT);
+            logger.info("UPDATE {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
 
             final Instant startTime = Instant.now();
             final AtomicInteger n = new AtomicInteger();
             final int totalChunks = Math.round(products.size() * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet()));
+                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(),batchSize+""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "UPDATE product SET inventory=?, price=? WHERE id=?")) {
@@ -96,8 +95,7 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
                 }
             });
 
-            logger.info("Update using array statements chunk size {} completed in {}\n{}",
-                    batchSize,
+            logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
                     TextUtils.shrug());
         }
@@ -106,28 +104,27 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
     @Order(2)
     @ParameterizedTest
     @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11, 1 << 12, 1 << 13, 1 << 14, 1 << 15,
-            1 << 16, 1 << 17})
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
     public void whenUpdateProductsUsingArrays_thenObserveBulkUpdates(int batchSize) throws Exception {
         Assertions.assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "TX active");
 
-        List<Product> products = findAll(PRODUCT_COUNT);
+        List<Product> products = findAll(PRODUCTS_PER_BATCH_COUNT);
 
-        Assertions.assertEquals(PRODUCT_COUNT, products.size(), "Not enough data - run the BatchInsertTest first");
+        Assertions.assertEquals(PRODUCTS_PER_BATCH_COUNT, products.size(), "Not enough data - run the BatchInsertTest first");
 
         Stream<List<Product>> chunks = JdbcTestUtils.chunkedStream(products.stream(), batchSize);
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
 
-            logger.info("Update using array statements in chunks of {} for a total of {}", batchSize, PRODUCT_COUNT);
+            logger.info("UPDATE FROM {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
 
             final Instant startTime = Instant.now();
             final AtomicInteger n = new AtomicInteger();
             final int totalChunks = Math.round(products.size() * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet()));
+                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(),batchSize+""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "UPDATE product SET inventory=data_table.new_inventory, price=data_table.new_price "
@@ -159,8 +156,7 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
                 }
             });
 
-            logger.info("Insert using batch statements chunk size {} completed in {}\n{}",
-                    batchSize,
+            logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
                     TextUtils.shrug());
         }

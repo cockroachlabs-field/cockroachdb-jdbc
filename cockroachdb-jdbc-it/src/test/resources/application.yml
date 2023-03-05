@@ -1,8 +1,11 @@
 spring:
   profiles:
     active:
+  output:
+    ansi:
+      enabled: ALWAYS
   datasource:
-    url: "jdbc:cockroachdb://localhost:26257/jdbc_test?sslmode=disable"
+    url: jdbc:cockroachdb://localhost:26257/jdbc_test?sslmode=disable
     driver-class-name: io.cockroachdb.jdbc.CockroachDriver
     username: root
     password:

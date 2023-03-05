@@ -1,4 +1,4 @@
-package io.cockroachdb.jdbc.it.basic;
+package io.cockroachdb.jdbc.it;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -24,15 +24,20 @@ import io.cockroachdb.jdbc.CockroachProperty;
 public class DriverManagerTest {
     private static final Logger logger = LoggerFactory.getLogger(DriverManagerTest.class);
 
+    private final String url = "jdbc:cockroachdb://localhost:26257/jdbc_test?sslmode=disable";
+
+    private final String user = "root";
+
+    private final String password = "";
+
     @Test
     public void whenUsingDataSource_expectValidConnection() throws Exception {
         Class.forName(CockroachDriver.class.getName());
 
-        ConnectionDetails details = ConnectionDetails.getInstance();
         CockroachDataSource ds = new CockroachDataSource();
-        ds.setUrl(details.getUrl());
-        ds.setUsername(details.getUser());
-        ds.setPassword(details.getPassword());
+        ds.setUrl(url);
+        ds.setUsername(user);
+        ds.setPassword(password);
         ds.addDataSourceProperty(CockroachProperty.USE_COCKROACH_METADATA.getName(), "true");
 
         try (Connection connection = ds.getConnection();
@@ -51,10 +56,8 @@ public class DriverManagerTest {
     public void whenUsingDriverManager_expectValidConnection() throws Exception {
         Class.forName(CockroachDriver.class.getName());
 
-        ConnectionDetails details = ConnectionDetails.getInstance();
-
         try (Connection connection = DriverManager.getConnection(
-                details.getUrl() + "&useCockroachMetadata=true", details.getUser(), details.getPassword());
+                url + "&useCockroachMetadata=true", user, password);
              Statement statement = connection.createStatement();
              ResultSet rs = statement.executeQuery(
                      "select version()")) {

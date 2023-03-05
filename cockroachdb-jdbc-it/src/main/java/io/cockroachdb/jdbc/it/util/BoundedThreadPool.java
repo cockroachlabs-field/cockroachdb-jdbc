@@ -34,10 +34,10 @@ public class BoundedThreadPool {
     }
 
     public <T> Future<T> submit(Callable<T> callable) {
-        return submitWithDelay(callable, 0);
+        return submitAfterDelay(callable, 0);
     }
 
-    public <T> Future<T> submitWithDelay(Callable<T> callable, long waitTimeMillis) {
+    public <T> Future<T> submitAfterDelay(Callable<T> callable, long waitTimeMillis) {
         if (threadPool.isShutdown() || threadPool.isTerminated()) {
             throw new IllegalStateException("Thread pool shutdown");
         }

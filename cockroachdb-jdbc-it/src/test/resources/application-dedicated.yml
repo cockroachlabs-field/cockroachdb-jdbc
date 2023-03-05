@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    url: jdbc:cockroachdb://kai-odin-hnb.aws-eu-north-1.cockroachlabs.cloud:26257/jdbc_test?sslmode=require
+    driver-class-name: io.cockroachdb.jdbc.CockroachDriver
+    username: guest
+    password: KhP-aS4-AURjRin_ism76Q

@@ -16,7 +16,9 @@
 
     <logger name="io.cockroachdb.jdbc" level="DEBUG"/>
     <logger name="io.cockroachdb.jdbc.retry" level="DEBUG"/>
-    <logger name="SQL_TRACE" level="DEBUG"/>
+
+    <!-- Change to TRACE to enable SQL tracing -->
+    <logger name="io.cockroachdb.jdbc.SQL_TRACE" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

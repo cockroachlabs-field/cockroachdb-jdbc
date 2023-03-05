@@ -1,5 +1,4 @@
 #!/bin/bash
-# Maven integration tests menu
 
 set -e
 
@@ -26,16 +25,20 @@ fn_echo(){
 }
 
 fn_select_group() {
-  PS3='Please enter integration test groups (-Dgroups): '
-  options=("retry-test" "batch-test" "anomaly-test" "QUIT")
+  PS3='Please enter integration test group tag (-Dgroups): '
+  options=("anomaly-test" "connection-retry-test" "batch-insert-test" "batch-update-test" "QUIT")
   select opt in "${options[@]}"
   do
       case $opt in
-          "retry-test")
+          "connection-retry-test")
               groups=$opt
               break
               ;;
-          "batch-test")
+          "batch-insert-test")
+              groups=$opt
+              break
+              ;;
+          "batch-update-test")
               groups=$opt
               break
               ;;
@@ -49,22 +52,25 @@ fn_select_group() {
           *) echo "invalid option $REPLY";;
       esac
   done
-
-  fn_echo "Selected groups: $groups"
 }
 
 fn_select_profile() {
-  PS3='Please enter test profile (-P): '
-  options=("it" "it-dev" "QUIT")
+  PS3='Please enter integration test Maven profile (-P): '
+  options=("it-local" "it-dedicated" "it-dev" "QUIT")
   select opt in "${options[@]}"
   do
       case $opt in
-          "it")
+          "it-local")
               profile=$opt
               fn_select_group
               break
               ;;
           "it-dev")
+              profile=$opt
+              fn_select_group
+              break
+              ;;
+          "it-dedicated")
               profile=$opt
               fn_select_group
               break
@@ -76,7 +82,6 @@ fn_select_profile() {
       esac
   done
 
-  fn_echo "Selected profile: $profile"
 }
 
 ################################
@@ -86,8 +91,11 @@ fn_select_profile() {
 profile=it
 groups=
 
-fn_echo "** Test Menu **"
+fn_echo "** Integration Test Menu **"
 
 fn_select_profile
+
+fn_echo "Maven Profile: $profile"
+fn_echo "Test Group(s): $groups"
 
 ./mvnw -P "$profile" -Dgroups="$groups" clean install

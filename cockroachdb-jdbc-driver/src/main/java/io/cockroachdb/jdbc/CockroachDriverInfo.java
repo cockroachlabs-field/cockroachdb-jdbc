@@ -10,7 +10,7 @@ public abstract class CockroachDriverInfo {
     // Driver name
     public static final String DRIVER_NAME = "CockroachDB JDBC Driver";
 
-    public static final String DRIVER_VERSION = "0.9.2";
+    public static final String DRIVER_VERSION = "0.9.4";
 
     public static final String DRIVER_FULL_NAME = DRIVER_NAME + " " + DRIVER_VERSION;
 

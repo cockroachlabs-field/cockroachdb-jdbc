@@ -121,6 +121,13 @@ public class CockroachDriver implements Driver {
                         return new CockroachConnection(connection, connectionSettings);
                     });
         } else {
+            if (Boolean.parseBoolean(
+                    CockroachProperty.RETRY_CONNECTION_ERRORS.toDriverPropertyInfo(properties).value)) {
+                logger.warn("JDBC driver property \"{}\" requires also \"{}\" set be to true to take effect",
+                        CockroachProperty.RETRY_CONNECTION_ERRORS.getName(),
+                        CockroachProperty.RETRY_TRANSIENT_ERRORS.getName());
+            }
+
             return new CockroachConnection(psqlConnection, connectionSettings);
         }
     }
@@ -158,7 +165,7 @@ public class CockroachDriver implements Driver {
     @Override
     public boolean acceptsURL(String url) {
         if (!url.startsWith(DRIVER_PREFIX)) {
-            logger.warn("JDBC URL must start with \"" + DRIVER_PREFIX + "\" but was: {}", url);
+            logger.warn("JDBC URL must start with \"{}\" but was: {}", DRIVER_PREFIX, url);
             return false;
         }
         return true;
