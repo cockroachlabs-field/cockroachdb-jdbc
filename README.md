@@ -89,7 +89,8 @@ The main library for the CockroachDB JDBC driver.
 
 ### cockroachdb-jdbc-it
 
-Integration and functional tests activated via a Maven profile. See build section further down in this page.
+Integration tests and functional tests activated via a Maven profiles. 
+See build section further down in this page.
 
 ## Getting Help
 
@@ -108,9 +109,8 @@ to record bugs and feature requests. If you want to raise an issue, please follo
 ### Supported CockroachDB and JRE Versions
 
 This driver is CockroachDB version agnostic and supports any version supported by the PostgreSQL 
-JDBC driver v 42.5+ (pgwire protocol v3.0). 
-
-It's build for Java 8 (or above) at language source and target level.
+JDBC driver v 42.5+ (pgwire protocol v3.0). It's build for Java 8 (or above) at language source 
+and target level. The integration tests are isolated and use Java 17 LTS due to spring boot 3.x. 
 
 ## URL Properties
 
@@ -265,7 +265,7 @@ public DataSource dataSource() {
     return ProxyDataSourceBuilder
             .create(hikariDataSource())
             .traceMethods()
-            .logQueryBySlf4j(SLF4JLogLevel.TRACE, "SQL_TRACE")
+            .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
             .asJson()
             .multiline()
             .build();
@@ -301,7 +301,7 @@ To configure `src/main/resources/logback-spring.xml` to capture all SQL statemen
     <logger name="org.springframework" level="INFO"/>
     
     <logger name="io.cockroachdb.jdbc" level="DEBUG"/>
-    <logger name="SQL_TRACE" level="TRACE"/>
+    <logger name="io.cockroachdb.jdbc.SQL_TRACE" level="TRACE"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
@@ -364,6 +364,13 @@ Then activate the integration test Maven profile:
 ```bash
 ./mvnw -P it -Dgroups=anomaly-test clean install
 ```
+
+Test groups include:
+
+- connection-retry-test - Runs a test with connection retries enabled. 
+- batch-insert-test - Batch inserts load test.
+- batch-update-test - Batch updates load test.
+- anomaly-test - Runs through a series of RW/WR/WW anomaly tests.
 
 See the [pom.xml](pom.xml) file for changing the database URL and other settings (under `ìt` profile).
 

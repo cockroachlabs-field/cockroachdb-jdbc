@@ -25,7 +25,7 @@ Serialization Conflicts and Connection Errors.
 
 ### Serialization Conflicts
 
-The JDBC driver can (optionally) perform internal retries of failed transactions due to serialization conflicts
+The JDBC driver can (optionally) perform internal© retries of failed transactions due to serialization conflicts
 denoted by the `40001` [state code](https://github.com/pgjdbc/pgjdbc/blob/master/pgjdbc/src/main/java/org/postgresql/util/PSQLState.java).
 
 Serialization conflict (40001) errors are safe to retry by the client, or in this case driver. Safe, in 
