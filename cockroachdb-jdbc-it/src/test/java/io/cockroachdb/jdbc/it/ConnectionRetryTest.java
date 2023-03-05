@@ -1,4 +1,4 @@
-package io.cockroachdb.jdbc.it.retry;
+package io.cockroachdb.jdbc.it;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -23,17 +23,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import io.cockroachdb.jdbc.CockroachConnection;
-import io.cockroachdb.jdbc.it.AbstractIntegrationTest;
-import io.cockroachdb.jdbc.it.DatabaseFixture;
 import io.cockroachdb.jdbc.it.batch.Product;
 import io.cockroachdb.jdbc.it.util.JdbcTestUtils;
 import io.cockroachdb.jdbc.it.util.TextUtils;
 import io.cockroachdb.jdbc.retry.LoggingRetryListener;
 
 @Order(1)
-@Tag("retry-test")
+@Tag("connection-retry-test")
 @DatabaseFixture(beforeTestScript = "db/batch/product-ddl.sql")
-public class ConnectionErrorRetryTest extends AbstractIntegrationTest {
+public class ConnectionRetryTest extends AbstractIntegrationTest {
     private final int NUM_PRODUCTS = 10_000;
 
     @Order(1)
@@ -107,7 +105,8 @@ public class ConnectionErrorRetryTest extends AbstractIntegrationTest {
                     }
                 });
 
-                logger.info("Updating {} products at offset {} for at least {} - shutdown nodes / LB now at any point",
+                logger.info(
+                        "Slowly updating {} products in explicit transaction - at offset {} for at least {} - shutdown nodes / LB now at any point",
                         productList.size(),
                         offset.get(),
                         Duration.ofMillis(200).multipliedBy(productList.size())
@@ -115,35 +114,36 @@ public class ConnectionErrorRetryTest extends AbstractIntegrationTest {
 
                 int n = 0;
                 for (Product product : productList) {
-                    try {
-                        System.out.printf("\n%s", TextUtils.progressBar(productList.size(), ++n));
-                        Thread.sleep(200L);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
                     int rows = JdbcTestUtils.update(connection, "update product set inventory=? where id=?",
                             product.addInventoryQuantity(-1),
                             product.getId());
                     if (rows != 1) {
                         throw new SQLException("Expected 1 got " + rows);
                     }
+                    try {
+                        System.out.printf("\n%s", TextUtils.progressBar(productList.size(), ++n, offset.toString()));
+                        Thread.sleep(500L);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
 
-                logger.info("Updated {} products at offset {} - committing", productList.size(), offset.get());
                 connection.commit();
+                logger.info("Updated {} products at offset {} - commit successful", productList.size(), offset.get());
                 commits.incrementAndGet();
             } catch (SQLException e) {
                 rollbacks.incrementAndGet();
-                logger.warn("", e);
+                logger.warn("SQL exception - not expected while retries run!", e);
             } finally {
                 offset.addAndGet(limit.get());
             }
-        }, 1, 20, TimeUnit.SECONDS);
+        }, 1, 30, TimeUnit.SECONDS);
 
-        logger.info("Running for 5min");
+        logger.info("Running for 2 min");
 
         try {
-            future.get(5, TimeUnit.MINUTES);
+            future.get(2, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException e) {
@@ -151,18 +151,19 @@ public class ConnectionErrorRetryTest extends AbstractIntegrationTest {
         } catch (TimeoutException e) {
             // fine
         } finally {
+            future.cancel(false);
             executorService.shutdownNow();
         }
 
-        logger.info(TextUtils.successRate("Transactions",
-                commits.get(), rollbacks.get()));
-        logger.info(TextUtils.successRate("Retries",
-                retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
+        logger.info(TextUtils.successRate("Commit vs rollbacks", commits.get(), rollbacks.get()));
+        logger.info(TextUtils.successRate("Transaction Retries", retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
 
         if (rollbacks.get() > 0) {
             logger.warn(TextUtils.flipTableVeryRoughly());
         } else {
             logger.info(TextUtils.shrug());
         }
+
+        Assertions.assertEquals(0, rollbacks.get());
     }
 }

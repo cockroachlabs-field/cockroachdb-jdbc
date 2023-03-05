@@ -29,22 +29,29 @@ import io.cockroachdb.jdbc.it.util.TextUtils;
 
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
 @Order(1)
-@Tag("batch-test")
+@Tag("batch-insert-test")
 @DatabaseFixture(beforeTestScript = "db/batch/product-ddl.sql")
 public class BatchInsertTest extends AbstractIntegrationTest {
-    private static final int PRODUCT_COUNT = 1 << 17;
+    private static final int PRODUCTS_PER_BATCH_COUNT = 10_000;
+
+    @Order(0)
+    @ParameterizedTest
+    @ValueSource(ints = {
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
+    public void whenStartingTest_thenPrintBatches(int batchSize) throws Exception {
+        logger.info("INSERT {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
+    }
 
     @Order(1)
     @ParameterizedTest
     @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11, 1 << 12, 1 << 13, 1 << 14, 1 << 15,
-            1 << 16, 1 << 17})
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
     public void whenInsertProducts_thenObserveBulkUpdates(int batchSize) throws Exception {
         Assertions.assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "TX active");
 
         List<Product> products = new ArrayList<>();
 
-        IntStream.rangeClosed(1, PRODUCT_COUNT).forEach(value -> {
+        IntStream.rangeClosed(1, PRODUCTS_PER_BATCH_COUNT).forEach(value -> {
             Product product = new Product();
             product.setId(UUID.randomUUID());
             product.setInventory(1);
@@ -59,14 +66,14 @@ public class BatchInsertTest extends AbstractIntegrationTest {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
 
-            logger.info("Insert using batch statements in chunks of {} for a total of {}", batchSize, PRODUCT_COUNT);
+            logger.info("INSERT {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
 
             final Instant startTime = Instant.now();
             final AtomicInteger n = new AtomicInteger();
-            final int totalChunks = Math.round(PRODUCT_COUNT * 1f / batchSize);
+            final int totalChunks = Math.round(PRODUCTS_PER_BATCH_COUNT * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet()));
+                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "INSERT INTO product (id,inventory,price,name,sku) values (?,?,?,?,?)")) {
@@ -89,8 +96,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
                 }
             });
 
-            logger.info("Insert using batch statements chunk size {} completed in {}\n{}",
-                    batchSize,
+            logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
                     TextUtils.shrug());
         }
@@ -99,14 +105,13 @@ public class BatchInsertTest extends AbstractIntegrationTest {
     @Order(2)
     @ParameterizedTest
     @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11, 1 << 12, 1 << 13, 1 << 14, 1 << 15,
-            1 << 16, 1 << 17})
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
     public void whenUpsertProducts_thenObserveBulkUpdates(int batchSize) throws Exception {
         Assertions.assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "TX active");
 
         List<Product> products = new ArrayList<>();
 
-        IntStream.rangeClosed(1, PRODUCT_COUNT).forEach(value -> {
+        IntStream.rangeClosed(1, PRODUCTS_PER_BATCH_COUNT).forEach(value -> {
             Product product = new Product();
             product.setId(UUID.randomUUID());
             product.setInventory(1);
@@ -121,20 +126,22 @@ public class BatchInsertTest extends AbstractIntegrationTest {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
 
-            logger.info("Insert using array statements in chunks of {} for a total of {}", batchSize, PRODUCT_COUNT);
+            logger.info("UPSERT {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
 
             final Instant startTime = Instant.now();
             final AtomicInteger n = new AtomicInteger();
-            final int totalChunks = Math.round(PRODUCT_COUNT * 1f / batchSize);
+            final int totalChunks = Math.round(PRODUCTS_PER_BATCH_COUNT * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet()));
+                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
-                        "INSERT INTO product(id,inventory,price,name,sku) " + "select unnest(?) as id, "
-                                + "       unnest(?) as inventory, " + "       unnest(?) as price, "
-                                + "       unnest(?) as name, " + "       unnest(?) as sku "
-                                + "ON CONFLICT (id) do nothing")) {
+                        "INSERT INTO product(id,inventory,price,name,sku)"
+                                + " select"
+                                + "  unnest(?) as id,"
+                                + "  unnest(?) as inventory, unnest(?) as price,"
+                                + "  unnest(?) as name, unnest(?) as sku"
+                                + " ON CONFLICT (id) do nothing")) {
                     List<Integer> qty = new ArrayList<>();
                     List<BigDecimal> price = new ArrayList<>();
                     List<UUID> ids = new ArrayList<>();
@@ -161,8 +168,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
                 }
             });
 
-            logger.info("Insert using array statements chunk size {} completed in {}\n{}",
-                    batchSize,
+            logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
                     TextUtils.shrug());
         }

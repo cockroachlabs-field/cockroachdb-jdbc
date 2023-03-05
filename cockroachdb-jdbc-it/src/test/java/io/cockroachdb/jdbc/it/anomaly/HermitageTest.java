@@ -33,10 +33,6 @@ public class HermitageTest extends AbstractAnomalyTest {
         return c;
     }
 
-    private void closeConnection(Connection connection) throws SQLException {
-        connection.close();
-    }
-
     /**
      * Pass dummy query and wait max-offset time to get old enough timestamp.
      */
@@ -96,8 +92,8 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertFalse(rs.next());
         });
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -136,8 +132,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t2.commit();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -177,8 +173,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t2.commit();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -193,14 +189,14 @@ public class HermitageTest extends AbstractAnomalyTest {
         Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value=11 where id=1"));
         Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value=22 where id=2"));
 
-        boundedThreadPool.submitWithDelay(() -> {
+        boundedThreadPool.submitAfterDelay(() -> {
             t1.commit();
-            closeConnection(t1);
+            t1.close();
             return null;
         }, 1000);
 
         t2.commit();
-        closeConnection(t2);
+        t2.close();
 
         Connection t3 = openConnection();
         JdbcTestUtils.select(t3, "select * from test where id=2", rs -> {
@@ -211,7 +207,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         });
 
         t3.commit();
-        closeConnection(t3);
+        t3.close();
 
         Connection t4 = openConnection();
         JdbcTestUtils.select(t4, "select * from test where id=1", rs -> {
@@ -222,7 +218,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         });
 
         t4.commit();
-        closeConnection(t4);
+        t4.close();
     }
 
     @Test
@@ -274,9 +270,9 @@ public class HermitageTest extends AbstractAnomalyTest {
         });
         t3.commit();
 
-        closeConnection(t1);
-        closeConnection(t2);
-        closeConnection(t3);
+        t1.close();
+        t2.close();
+        t3.close();
     }
 
     @Test
@@ -300,8 +296,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t1.commit();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -323,8 +319,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t2.rollback();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -357,8 +353,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t2.rollback();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -395,8 +391,8 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertEquals(20, rs.getInt(2));
         });
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -425,8 +421,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t1.commit();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -455,8 +451,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t1.rollback();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -488,21 +484,20 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value = 11 where id = 1"));
 
-        boundedThreadPool.submitWithDelay(() -> {
-            t1.commit(); // Unblocks next t2 update
-            return null;
-        }, 2000);
+        t1.commit();
+        t1.close();
 
         Assertions.assertThrows(
                 ConcurrentUpdateException.class,
-                () -> JdbcTestUtils.update(t2, "update test set value = 22 where id = 2"));
+                () -> {
+                    JdbcTestUtils.update(t2, "update test set value = 22 where id = 2");
+                    t2.commit();
+                });
 
-//        JdbcTestUtils.update(t2, "update test set value = 22 where id = 2");
+        t2.close();
 
-        JdbcTestUtils.select(t1, "select * from test where id in (1,2)", rs -> {
-        });
-
-        JdbcTestUtils.select(t2, "select * from test where id in (1,2)", rs -> {
+        Connection t3 = openConnection();
+        JdbcTestUtils.select(t3, "select * from test where id in (1,2)", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(11, rs.getInt(2));
@@ -512,8 +507,7 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertFalse(rs.next());
         });
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t3.close();
     }
 
     @Test
@@ -534,7 +528,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         Assertions.assertEquals(1, JdbcTestUtils.update(t1, "insert into test (id, value) values(3, 30)"));
         Assertions.assertEquals(1, JdbcTestUtils.update(t2, "insert into test (id, value) values(4, 42)"));
 
-        boundedThreadPool.submitWithDelay(() -> {
+        boundedThreadPool.submitAfterDelay(() -> {
             Assertions.assertThrows(
                     SQLException.class, () -> t1.commit());
             return null;
@@ -542,8 +536,8 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t2.commit();
 
-        closeConnection(t1);
-        closeConnection(t2);
+        t1.close();
+        t2.close();
     }
 
     @Test
@@ -587,8 +581,8 @@ public class HermitageTest extends AbstractAnomalyTest {
         Assertions.assertThrows(
                 SQLException.class, () -> t1.commit());
 
-        closeConnection(t1);
-        closeConnection(t2);
-        closeConnection(t3);
+        t1.close();
+        t2.close();
+        t3.close();
     }
 }

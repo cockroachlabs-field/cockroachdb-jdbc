@@ -3,6 +3,7 @@ package io.cockroachdb.jdbc.it;
 import javax.sql.DataSource;
 
 import org.postgresql.PGProperty;
+import org.postgresql.ds.PGSimpleDataSource;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
@@ -51,7 +52,7 @@ public class IntegrationTestConfiguration {
         ds.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), "false");
         ds.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), "true");
         ds.addDataSourceProperty(CockroachProperty.RETRY_CONNECTION_ERRORS.getName(), "true");
-        ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "10");
+        ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "100"); // Set high for testing
         ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15s");
 
         return loggingProxy(ds);
@@ -79,18 +80,28 @@ public class IntegrationTestConfiguration {
         ds.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), "false");
         ds.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), "true");
         ds.addDataSourceProperty(CockroachProperty.RETRY_CONNECTION_ERRORS.getName(), "true");
-        ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "10");
+        ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "100"); // Set high for testing
         ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15s");
 
-        return loggingProxy(new LazyConnectionDataSourceProxy(ds));
+        return loggingProxy(ds);
     }
 
     private ProxyDataSource loggingProxy(DataSource dataSource) {
         return ProxyDataSourceBuilder
                 .create(dataSource)
-                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "SQL_TRACE")
+                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
                 .asJson()
                 .build();
     }
 
+    @Bean
+    @Profile("pg")
+    @ConfigurationProperties("spring.datasource.hikari")
+    public DataSource pgSimpleDataSource() throws Exception {
+        PGSimpleDataSource ds = dataSourceProperties()
+                .initializeDataSourceBuilder()
+                .type(PGSimpleDataSource.class)
+                .build();
+        return loggingProxy(ds);
+    }
 }
