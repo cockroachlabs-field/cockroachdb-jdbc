@@ -12,6 +12,13 @@
     <artifactId>cockroachdb-jdbc-driver</artifactId>
     <packaging>jar</packaging>
     <name>CockroachDB JDBC Driver</name>
+    <description>A JDBC driver for CockroachDB wrapping pg-jdbc</description>
+
+    <properties>
+        <java.version>1.8</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -44,5 +51,17 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-</project>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- Synonym for 1.8 -->
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -12,13 +12,18 @@
     <artifactId>cockroachdb-jdbc-it</artifactId>
     <packaging>jar</packaging>
     <name>CockroachDB JDBC Driver Integration Tests</name>
+    <description>Integration Tests for CockroachDB JDBC driver</description>
 
     <properties>
-        <spring.boot.version>2.7.8</spring.boot.version>
-        <spring.data.version>2.7.7</spring.data.version>
-        <spring.shell.version>2.1.6</spring.shell.version>
-        <datasource-proxy.version>1.8</datasource-proxy.version>
-        <hikari.version>4.0.3</hikari.version>
+        <java.version>17</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+
+        <spring.boot.version>3.0.3</spring.boot.version>
+        <spring.data.version>3.0.2</spring.data.version>
+        <spring.shell.version>3.0.1</spring.shell.version>
+        <datasource-proxy.version>1.8.1</datasource-proxy.version>
+        <hikari.version>5.0.1</hikari.version>
     </properties>
 
     <build>
@@ -90,5 +95,62 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- Integration tests matching group tags -->
+        <profile>
+            <id>it-local</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <groups>${groups}</groups>
+                            <argLine>
+                                -Dspring.datasource.url=jdbc:cockroachdb://localhost:26257/jdbc_test?sslmode=disable
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Integration tests matching group tags -->
+        <profile>
+            <id>it-dedicated</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <groups>${groups}</groups>
+                            <argLine>
+                                -Dspring.profiles.active=dedicated
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Integration tests matching group tags -->
+        <profile>
+            <id>it-dev</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <groups>${groups}</groups>
+                            <argLine>
+                                -Dspring.profiles.active=dev
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
 
