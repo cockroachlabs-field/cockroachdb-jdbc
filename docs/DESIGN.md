@@ -1,7 +1,9 @@
 # CockroachDB JDBC Driver Design Notes
 
 This is a JDBC Type-4 driver for [CockroachDB](https://www.cockroachlabs.com/) that wraps the PostgreSQL
-JDBC driver ([pgjdbc](https://jdbc.postgresql.org/)) that must be on the app's classpath. There are no 
+JDBC driver ([pgjdbc](https://jdbc.postgresql.org/)) that must be on the app's classpath. 
+
+There are no 
 other dependencies besides [SLF4J](https://www.slf4j.org/) for which any supported logging framework 
 can be used.
 
