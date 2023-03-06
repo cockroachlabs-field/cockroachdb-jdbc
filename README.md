@@ -70,16 +70,43 @@ Add this dependency to your `pom.xml` file:
 </dependency>
 ```
 
-Alternatively, if you just need to drop in the driver JAR file to your projects `lib` directory, or similar:
+Then add the Maven repository to your `pom.xml` file (alternatively in Maven's [settings.xml](https://maven.apache.org/settings.html)):
 
-```bash
-git clone git@github.com:cockroachlabs-field/cockroachdb-jdbc.git
-cd cockroachdb-jdbc
-chmod +x mvnw
-./mvnw clean install
+```xml
+<repositories>
+    <repository>
+        <id>github</id>
+        <name>Cockroach Labs Maven Packages</name>
+        <url>https://maven.pkg.github.com/cockroachlabs-field/cockroachdb-jdbc</url>
+        <snapshots>
+            <enabled>true</enabled>
+        </snapshots>
+    </repository>
+</repositories>
 ```
 
-The JDBC driver jar is now found in `cockroachdb-jdbc-driver/target`.
+Finally, you need to authenticate to GitHub Packages. For more information, 
+see [Authenticating to GitHub Packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages).
+
+Add your personal access token (classic) to the servers section in your [settings.xml](https://maven.apache.org/settings.html):
+
+```xml
+<server>
+    <id>github</id>
+    <username>your-github-name</username>
+    <password>your-access-token</password>
+</server>
+```
+Take note that the server and repository id's must match.
+
+Now you can build your project with this JDBC driver as dependency:
+
+```shell
+mvn clean install
+```
+
+Alternatively, you can just clone the repository and build it locally using `mvn install`. See
+the building section at the end of this page.
 
 ## Modules
 
@@ -96,7 +123,7 @@ See build section further down in this page.
 
 ### Reporting Issues
 
-Spring Data CockroachDB uses [GitHub](https://github.com/cockroachlabs-field/cockroachdb-jdbc/issues) as issue tracking system
+This driver uses [GitHub](https://github.com/cockroachlabs-field/cockroachdb-jdbc/issues) as issue tracking system
 to record bugs and feature requests. If you want to raise an issue, please follow the recommendations below:
 
 * Before you log a bug, please search the [issue tracker](https://github.com/cockroachlabs-field/cockroachdb-jdbc/issues)
@@ -106,11 +133,13 @@ to record bugs and feature requests. If you want to raise an issue, please follo
   that you are using and JVM version, complete stack traces and any relevant configuration information.
 * If you need to paste code, or include a stack trace format it as code using triple backtick.
 
-### Supported CockroachDB and JRE Versions
+### Supported CockroachDB and JDK Versions
 
 This driver is CockroachDB version agnostic and supports any version supported by the PostgreSQL 
-JDBC driver v 42.5+ (pgwire protocol v3.0). It's build for Java 8 (or above) at language source 
-and target level. The integration tests are isolated and use Java 17 LTS due to spring boot 3.x. 
+JDBC driver v 42.5+ (pgwire protocol v3.0). 
+
+It's build for Java 8 at language source and target level but requires Java 17 LTS for building.
+For more details, see the building section.
 
 ## URL Properties
 
@@ -160,7 +189,7 @@ if the SQL statements are non-idempotent. See the [design notes](docs/DESIGN.md)
 
 (default: `io.cockroachdb.jdbc.retry.EmptyRetryListener`)
 
-Name of class that implements 'io.cockroachdb.jdbc.retry.RetryListener' to be used to receive
+Name of class that implements `io.cockroachdb.jdbc.retry.RetryListener` to be used to receive
 callback events when retries occur. One instance is created for each JDBC connection.
 
 ### retryStrategyClassName 
@@ -265,7 +294,7 @@ public DataSource dataSource() {
     return ProxyDataSourceBuilder
             .create(hikariDataSource())
             .traceMethods()
-            .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
+            .logQueryBySlf4j(SLF4JLogLevel.DEBUG, "io.cockroachdb.jdbc")
             .asJson()
             .multiline()
             .build();
@@ -280,12 +309,10 @@ public HikariDataSource hikariDataSource() {
             .build();
     ds.setAutoCommit(false);
     ds.addDataSourceProperty(PGProperty.REWRITE_BATCHED_INSERTS.getName(), "true");
-    
     ds.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), "true");
     ds.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), "true");
     ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "5");
     ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "10000");
-    
     return ds;
 }
 ```
@@ -299,9 +326,7 @@ To configure `src/main/resources/logback-spring.xml` to capture all SQL statemen
     <include resource="org/springframework/boot/logging/logback/console-appender.xml" />
 
     <logger name="org.springframework" level="INFO"/>
-    
     <logger name="io.cockroachdb.jdbc" level="DEBUG"/>
-    <logger name="io.cockroachdb.jdbc.SQL_TRACE" level="TRACE"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
@@ -315,19 +340,27 @@ This library follows [Semantic Versioning](http://semver.org/).
 
 ## Building
 
-The CockroachDB JDBC driver runs on any platform for which there is a JRE (8+).
+The CockroachDB JDBC driver requires Java 17 (or later) LTS but is compiled to 
+on any platform for which there is a Java 8 runtime.
 
 ### Prerequisites
 
-- JDK8+ with 1.8 language level (OpenJDK compatible)
+- JDK17+ LTS for building (OpenJDK compatible)
 - Maven 3+ (optional, embedded)
 
-If you want to build with the regular mvn command, you will need [Maven v3.5.0](https://maven.apache.org/run-maven/index.html) or above.
+If you want to build with the regular `mvn` command, 
+you will need [Maven v3.x](https://maven.apache.org/run-maven/index.html) or above.
 
 Install the JDK (Linux):
 
 ```bash
-sudo apt-get -qq install -y openjdk-8-jdk
+sudo apt-get -qq install -y openjdk-17-jdk
+```
+
+Install the JDK (macOS):
+
+```bash
+brew install openjdk@17 
 ```
 
 ### Clone the project
@@ -367,10 +400,10 @@ Then activate the integration test Maven profile:
 
 Test groups include:
 
+- anomaly-test - Runs through a series of RW/WR/WW anomaly tests.
 - connection-retry-test - Runs a test with connection retries enabled. 
 - batch-insert-test - Batch inserts load test.
 - batch-update-test - Batch updates load test.
-- anomaly-test - Runs through a series of RW/WR/WW anomaly tests.
 
 See the [pom.xml](pom.xml) file for changing the database URL and other settings (under `ìt` profile).
 
