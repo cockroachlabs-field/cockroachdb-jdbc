@@ -73,22 +73,20 @@ Add this dependency to your `pom.xml` file:
 Then add the Maven repository to your `pom.xml` file (alternatively in Maven's [settings.xml](https://maven.apache.org/settings.html)):
 
 ```xml
-<repositories>
-    <repository>
-        <id>github</id>
-        <name>Cockroach Labs Maven Packages</name>
-        <url>https://maven.pkg.github.com/cockroachlabs-field/cockroachdb-jdbc</url>
-        <snapshots>
-            <enabled>true</enabled>
-        </snapshots>
-    </repository>
-</repositories>
+<repository>
+    <id>github</id>
+    <name>Cockroach Labs Maven Packages</name>
+    <url>https://maven.pkg.github.com/cockroachlabs-field/cockroachdb-jdbc</url>
+    <snapshots>
+        <enabled>true</enabled>
+    </snapshots>
+</repository>
 ```
 
-Finally, you need to authenticate to GitHub Packages. For more information, 
-see [Authenticating to GitHub Packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages).
+Finally, you need to authenticate to GitHub Packages by creating a personal access token (classic) 
+that includes the `read:packages` scope. For more information, see [Authenticating to GitHub Packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry#authenticating-to-github-packages).
 
-Add your personal access token (classic) to the servers section in your [settings.xml](https://maven.apache.org/settings.html):
+Add your personal access token to the servers section in your [settings.xml](https://maven.apache.org/settings.html):
 
 ```xml
 <server>
@@ -97,9 +95,9 @@ Add your personal access token (classic) to the servers section in your [setting
     <password>your-access-token</password>
 </server>
 ```
-Take note that the server and repository id's must match.
+Take note that the server and repository id's must match (it can be different than `github`).
 
-Now you can build your project with this JDBC driver as dependency:
+Now you should be able to build your own project with the JDBC driver as a dependency:
 
 ```shell
 mvn clean install
