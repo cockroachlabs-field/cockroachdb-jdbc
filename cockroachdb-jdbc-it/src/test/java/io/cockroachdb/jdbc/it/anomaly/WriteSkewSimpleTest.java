@@ -79,7 +79,8 @@ public class WriteSkewSimpleTest extends AbstractAnomalyTest {
         }
 
         logger.info(TextUtils.successRate("Retries",
-                retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
+                LoggingRetryListener.getSuccessfulRetries(),
+                LoggingRetryListener.getFailedRetries()));
         logger.info(TextUtils.shrug());
     }
 

@@ -155,8 +155,11 @@ public class ConnectionRetryTest extends AbstractIntegrationTest {
             executorService.shutdownNow();
         }
 
-        logger.info(TextUtils.successRate("Commit vs rollbacks", commits.get(), rollbacks.get()));
-        logger.info(TextUtils.successRate("Transaction Retries", retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
+        logger.info(TextUtils.successRate("Commit vs rollbacks",
+                commits.get(), rollbacks.get()));
+        logger.info(TextUtils.successRate("Transaction Retries",
+                LoggingRetryListener.getSuccessfulRetries(),
+                LoggingRetryListener.getFailedRetries()));
 
         if (rollbacks.get() > 0) {
             logger.warn(TextUtils.flipTableVeryRoughly());

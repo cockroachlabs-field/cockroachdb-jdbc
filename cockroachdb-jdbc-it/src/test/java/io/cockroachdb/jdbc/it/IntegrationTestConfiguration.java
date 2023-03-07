@@ -4,24 +4,26 @@ import javax.sql.DataSource;
 
 import org.postgresql.PGProperty;
 import org.postgresql.ds.PGSimpleDataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.ApplicationContextException;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
-import org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 import com.zaxxer.hikari.HikariDataSource;
 
 import io.cockroachdb.jdbc.CockroachDataSource;
 import io.cockroachdb.jdbc.CockroachProperty;
 import net.ttddyy.dsproxy.listener.logging.SLF4JLogLevel;
-import net.ttddyy.dsproxy.support.ProxyDataSource;
 import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 
 @EnableAspectJAutoProxy(proxyTargetClass = true)
@@ -31,20 +33,24 @@ import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 @ComponentScan(basePackageClasses = IntegrationTestConfiguration.class)
 @Configuration
 public class IntegrationTestConfiguration {
+    @Autowired
+    private Environment environment;
+
     @Bean
-    @Primary
     @ConfigurationProperties("spring.datasource")
     public DataSourceProperties dataSourceProperties() {
         return new DataSourceProperties();
     }
 
     @Bean
-    @Profile("!hikari")
-    public DataSource dataSource() {
+    @Profile("ds-crdb")
+    public CockroachDataSource cockroachDataSource() {
         CockroachDataSource ds = dataSourceProperties()
                 .initializeDataSourceBuilder()
                 .type(CockroachDataSource.class)
                 .build();
+
+        ds.setAutoCommit(true);
 
         ds.addDataSourceProperty(PGProperty.REWRITE_BATCHED_INSERTS.getName(), "true");
         ds.addDataSourceProperty(PGProperty.APPLICATION_NAME.getName(), "CockroachDB JDBC Driver Test (non-pooled)");
@@ -55,24 +61,19 @@ public class IntegrationTestConfiguration {
         ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "100"); // Set high for testing
         ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15s");
 
-        return loggingProxy(ds);
+        return ds;
     }
 
     @Bean
-    @Profile("hikari")
+    @Profile("ds-hikari")
     @ConfigurationProperties("spring.datasource.hikari")
-    public DataSource pooledDataSource() {
+    public HikariDataSource hikariDataSource() {
         HikariDataSource ds = dataSourceProperties()
                 .initializeDataSourceBuilder()
                 .type(HikariDataSource.class)
                 .build();
 
-        ds.setMaximumPoolSize(Runtime.getRuntime().availableProcessors() * 10);
-        ds.setMinimumIdle(5);
         ds.setAutoCommit(true);
-        ds.setPoolName("CockroachDB JDBC HikariCP");
-        ds.setConnectionTimeout(5_000); // Max wait to get connection from pool (millis)
-        ds.setInitializationFailTimeout(-1); // Max wait to get connection from pool (millis)
 
         ds.addDataSourceProperty(PGProperty.REWRITE_BATCHED_INSERTS.getName(), "true");
         ds.addDataSourceProperty(PGProperty.APPLICATION_NAME.getName(), "CockroachDB JDBC Driver Test (pooled)");
@@ -83,25 +84,38 @@ public class IntegrationTestConfiguration {
         ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "100"); // Set high for testing
         ds.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15s");
 
-        return loggingProxy(ds);
-    }
-
-    private ProxyDataSource loggingProxy(DataSource dataSource) {
-        return ProxyDataSourceBuilder
-                .create(dataSource)
-                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
-                .asJson()
-                .build();
+        return ds;
     }
 
     @Bean
-    @Profile("pg")
+    @Profile("ds-pgsimple")
     @ConfigurationProperties("spring.datasource.hikari")
-    public DataSource pgSimpleDataSource() throws Exception {
+    public PGSimpleDataSource pgSimpleDataSource() {
         PGSimpleDataSource ds = dataSourceProperties()
                 .initializeDataSourceBuilder()
                 .type(PGSimpleDataSource.class)
                 .build();
-        return loggingProxy(ds);
+        return ds;
+    }
+
+    @Primary
+    @Bean
+    public DataSource dataSource() {
+        DataSource dataSource;
+        if (environment.acceptsProfiles(Profiles.of("ds-hikari"))) {
+            dataSource = hikariDataSource();
+        } else if (environment.acceptsProfiles(Profiles.of("ds-crdb"))) {
+            dataSource = cockroachDataSource();
+        } else if (environment.acceptsProfiles(Profiles.of("ds-pgsimple"))) {
+            dataSource = pgSimpleDataSource();
+        } else {
+            throw new ApplicationContextException("Unrecognized datasource profile");
+        }
+        return ProxyDataSourceBuilder
+                .create(dataSource)
+                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
+                .asJson()
+//                .multiline()
+                .build();
     }
 }

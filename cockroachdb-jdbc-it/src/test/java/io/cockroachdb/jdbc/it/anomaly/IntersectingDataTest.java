@@ -117,7 +117,7 @@ public class IntersectingDataTest extends AbstractAnomalyTest {
         }
 
         logger.info(TextUtils.successRate("Retries",
-                retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
+                LoggingRetryListener.getSuccessfulRetries(), LoggingRetryListener.getFailedRetries()));
         logger.info("Successful: {}", successfulOps);
         logger.info("Failed: {}", failedOps);
     }

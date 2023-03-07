@@ -85,6 +85,9 @@ public class CockroachDriver implements Driver {
             return null;
         }
 
+        logger.info("Opening connection to \"{}\" using {} with properties {}",
+                url, CockroachDriverInfo.DRIVER_FULL_NAME, info);
+
         Properties defaults = new Properties();
         defaults.putAll(info);
 
@@ -96,7 +99,6 @@ public class CockroachDriver implements Driver {
         Connection psqlConnection = DriverManager.getConnection(toDelegateURL(url), info);
 
         ConnectionSettings connectionSettings = new ConnectionSettings();
-
         connectionSettings.setUseCockroachMetadata(Boolean.parseBoolean(
                 CockroachProperty.USE_COCKROACH_METADATA.toDriverPropertyInfo(properties).value));
 

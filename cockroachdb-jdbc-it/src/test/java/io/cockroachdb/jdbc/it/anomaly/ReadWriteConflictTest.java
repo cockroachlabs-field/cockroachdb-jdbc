@@ -81,12 +81,12 @@ public class ReadWriteConflictTest extends AbstractAnomalyTest {
 
         logger.info("Listing top-5 of {} errors:", errors.size());
         errors.stream().limit(5).forEach(throwable -> {
-            logger.warn("", throwable);
+            logger.warn(throwable.toString());
         });
 
         logger.info(TextUtils.successRate("Transactions", success, failures));
         logger.info(TextUtils.successRate("Retries",
-                retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
+                LoggingRetryListener.getSuccessfulRetries(), LoggingRetryListener.getFailedRetries()));
 
         if (failures > 0) {
             logger.info(TextUtils.flipTableGently());

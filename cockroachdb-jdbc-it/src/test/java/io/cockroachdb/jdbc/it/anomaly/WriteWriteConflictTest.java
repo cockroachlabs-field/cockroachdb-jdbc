@@ -61,7 +61,7 @@ public class WriteWriteConflictTest extends AbstractAnomalyTest {
 
         logger.info("Listing top-5 of {} errors:", errors.size());
         errors.stream().limit(5).forEach(throwable -> {
-            logger.warn("", throwable);
+            logger.warn(throwable.toString());
         });
 
         logger.info(TextUtils.successRate("Operations", success, fail));

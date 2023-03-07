@@ -1,21 +1,32 @@
 spring:
   profiles:
-    active:
+    # one of: local, dedicated, serverless, dev
+    # one of: ds-hikari, ds-crdb, ds-pgsimple
+    active: local,ds-hikari
   output:
     ansi:
       enabled: ALWAYS
   datasource:
-    url: jdbc:cockroachdb://localhost:26257/jdbc_test?sslmode=disable
     driver-class-name: io.cockroachdb.jdbc.CockroachDriver
     username: root
     password:
     hikari:
-      maximum-pool-size: 25
+      maximum-pool-size: 5
       minimum-idle: 5
-      max-lifetime: 1800000
-      connection-timeout: 10000
+      # Max wait to get connection from pool (millis)
+      connection-timeout: 7000
+      initialization-fail-timeout: -1
+      # 3m
+      max-lifetime: 180000
+      # 1m
+      idle-timeout: 60000
   jpa:
     open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
 logging:
   pattern:
     console: "%clr(%d{${LOG_DATEFORMAT_PATTERN:HH:mm:ss.SSS}}){faint} %clr(${LOG_LEVEL_PATTERN:%5p}) %clr([%15.15t]){faint} %clr([%X{retry.connection}]){faint} %clr([%logger{15}]){cyan} %m%n${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"

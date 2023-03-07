@@ -32,7 +32,7 @@ public enum CockroachProperty {
 
     RETRY_LISTENER_CLASSNAME(
             "retryListenerClassName",
-            "io.cockroachdb.jdbc.retry.EmptyRetryListener",
+            "io.cockroachdb.jdbc.retry.LoggingRetryListener",
             false,
             "Name of class that implements 'io.cockroachdb.jdbc.retry.RetryListener' to be used to receive "
                     + "callback events when retries occur. "

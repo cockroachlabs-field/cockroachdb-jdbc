@@ -16,13 +16,13 @@ import io.cockroachdb.jdbc.util.ExceptionUtils;
  * Retry listener delegating to a logger.
  */
 public class LoggingRetryListener implements RetryListener {
+    private static final AtomicInteger numRetriesSuccessful = new AtomicInteger();
+
+    private static final AtomicInteger numRetriesFailed = new AtomicInteger();
+
     protected final Logger logger;
 
     private final Marker marker = MarkerFactory.getMarker("RETRY");
-
-    private final AtomicInteger numRetriesSuccessful = new AtomicInteger();
-
-    private final AtomicInteger numRetriesFailed = new AtomicInteger();
 
     public LoggingRetryListener() {
         this(LoggerFactory.getLogger(LoggingRetryListener.class));
@@ -38,9 +38,11 @@ public class LoggingRetryListener implements RetryListener {
 
     @Override
     public void beforeRetry(String methodName, int attempt, SQLException ex, Duration executionTime) {
-        logger.debug(marker,
-                "Transaction retry started: attempt [{}] for method [{}] with execution time [{}]\n{}",
-                attempt, methodName, executionTime, ExceptionUtils.toNestedString(ex));
+        if (logger.isDebugEnabled()) {
+            logger.debug(marker,
+                    "Transaction retry started: attempt [{}] for method [{}] with execution time [{}]\n{}",
+                    attempt, methodName, executionTime, ExceptionUtils.toNestedString(ex));
+        }
     }
 
     @Override
@@ -59,11 +61,11 @@ public class LoggingRetryListener implements RetryListener {
         }
     }
 
-    public int getSuccessfulRetries() {
+    public static int getSuccessfulRetries() {
         return numRetriesSuccessful.get();
     }
 
-    public int getFailedRetries() {
+    public static int getFailedRetries() {
         return numRetriesFailed.get();
     }
 }

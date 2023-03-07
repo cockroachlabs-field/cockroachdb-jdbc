@@ -52,13 +52,13 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
         try {
             Assertions.assertTrue(t1.get() >= 2);
         } catch (ExecutionException e) {
-            e.getCause().printStackTrace();
+            logger.warn(e.toString());
         }
 
         try {
             Assertions.assertTrue(t2.get() >= 2);
         } catch (ExecutionException e) {
-            e.getCause().printStackTrace();
+            logger.warn(e.toString());
         }
 
         try (Connection connection = dataSource.getConnection()) {
@@ -115,12 +115,15 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
 
         logger.info("Listing top-5 of {} errors:", errors.size());
         errors.stream().limit(5).forEach(throwable -> {
-            logger.warn("", throwable);
+            logger.warn(throwable.toString());
         });
 
-        logger.info(TextUtils.successRate("Operations", success, failures));
+        logger.info(TextUtils.successRate("Operations",
+                success,
+                failures));
         logger.info(TextUtils.successRate("Retries",
-                retryListener.getSuccessfulRetries(), retryListener.getFailedRetries()));
+                LoggingRetryListener.getSuccessfulRetries(),
+                LoggingRetryListener.getFailedRetries()));
 
         if (failures > 0) {
             logger.info(TextUtils.flipTableGently());

@@ -185,7 +185,7 @@ if the SQL statements are non-idempotent. See the [design notes](docs/DESIGN.md)
 
 ### retryListenerClassName 
 
-(default: `io.cockroachdb.jdbc.retry.EmptyRetryListener`)
+(default: `io.cockroachdb.jdbc.retry.LoggingRetryListener`)
 
 Name of class that implements `io.cockroachdb.jdbc.retry.RetryListener` to be used to receive
 callback events when retries occur. One instance is created for each JDBC connection.
