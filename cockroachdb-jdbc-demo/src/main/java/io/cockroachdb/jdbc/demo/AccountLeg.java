@@ -3,9 +3,9 @@ package io.cockroachdb.jdbc.demo;
 import java.math.BigDecimal;
 
 public class AccountLeg {
-    private Long id;
+    private final Long id;
 
-    private BigDecimal amount;
+    private final BigDecimal amount;
 
     public AccountLeg(Long id, BigDecimal amount) {
         this.id = id;

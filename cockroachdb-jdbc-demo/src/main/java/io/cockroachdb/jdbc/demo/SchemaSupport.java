@@ -9,13 +9,15 @@ import java.sql.Statement;
 import javax.sql.DataSource;
 
 public abstract class SchemaSupport {
+    public static final String DB_CREATE_SQL = "/db/create.sql";
+
     private SchemaSupport() {
     }
 
     public static void setupSchema(DataSource ds) throws Exception {
-        InputStream is = SimpleJdbcDemo.class.getResourceAsStream("/db/create.sql");
+        InputStream is = JdbcDriverDemo.class.getResourceAsStream(DB_CREATE_SQL);
         if (is == null) {
-            throw new IOException("Not found: " + "/db/create.sql");
+            throw new IOException("DDL file not found: " + DB_CREATE_SQL);
         }
         LineNumberReader reader = new LineNumberReader(new InputStreamReader(is));
 
@@ -26,7 +28,7 @@ public abstract class SchemaSupport {
                 buffer.append(line);
             }
             if (line.endsWith(";") && buffer.length() > 0) {
-                JdbcTemplate.execute(ds, conn -> {
+                JdbcUtils.executeWithoutTransaction(ds, conn -> {
                     try (Statement statement = conn.createStatement()) {
                         statement.execute(buffer.toString());
                     }

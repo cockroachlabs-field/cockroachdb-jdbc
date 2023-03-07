@@ -4,6 +4,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 @FunctionalInterface
-interface ConnectionCallback<T> {
-    T doInConnection(Connection conn) throws SQLException;
+public interface ConnectionCallback<T> {
+    T process(Connection connection) throws SQLException;
 }

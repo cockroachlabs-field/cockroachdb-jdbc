@@ -1,30 +1,24 @@
 package io.cockroachdb.jdbc.demo;
 
+import java.lang.reflect.UndeclaredThrowableException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import javax.sql.DataSource;
 
 public abstract class JdbcUtils {
-    public static <T> Stream<List<T>> chunkedStream(Stream<T> stream, int chunkSize) {
-        AtomicInteger idx = new AtomicInteger();
-        return stream.collect(Collectors.groupingBy(x -> idx.getAndIncrement() / chunkSize))
-                .values().stream();
+    private JdbcUtils() {
     }
 
-    public static void select(DataSource dataSource, String sql, Consumer<ResultSet> handler)
+    public static <T> T select(DataSource dataSource, String sql,
+                               ResultSetCallback<T> action)
             throws SQLException {
         try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 try (ResultSet rs = ps.executeQuery()) {
-                    handler.accept(rs);
+                    return action.process(rs);
                 }
             }
         }
@@ -40,6 +34,47 @@ public abstract class JdbcUtils {
                 }
                 return ps.executeUpdate();
             }
+        }
+    }
+
+    public static <T> T executeWithoutTransaction(DataSource ds,
+                                                  ConnectionCallback<T> action) {
+        try (Connection conn = ds.getConnection()) {
+            T result;
+            try {
+                result = action.process(conn);
+            } catch (RuntimeException | Error ex) {
+                throw ex;
+            } catch (Throwable ex) {
+                throw new UndeclaredThrowableException(ex,
+                        "TransactionCallback threw undeclared checked exception");
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new DataAccessException(e);
+        }
+    }
+
+    public static <T> T executeWithinTransaction(DataSource ds,
+                                                 ConnectionCallback<T> action) {
+        try (Connection conn = ds.getConnection()) {
+            conn.setAutoCommit(false);
+
+            T result;
+            try {
+                result = action.process(conn);
+            } catch (RuntimeException | Error ex) {
+                conn.rollback();
+                throw ex;
+            } catch (Throwable ex) {
+                conn.rollback();
+                throw new UndeclaredThrowableException(ex,
+                        "TransactionCallback threw undeclared checked exception");
+            }
+            conn.commit();
+            return result;
+        } catch (SQLException e) {
+            throw new DataAccessException(e);
         }
     }
 }

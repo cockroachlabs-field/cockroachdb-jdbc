@@ -1,11 +1,12 @@
--- drop table if exists account;
+drop table if exists account;
+
 create table if not exists account
 (
     id           int            not null primary key,
     balance      numeric(19, 2) not null,
     name         varchar(128)   not null,
     account_type varchar(2)     not null,
-    updated      timestamptz    not null default clock_timestamp()
+    updated_at   timestamptz    not null default clock_timestamp()
 );
 
 alter table account
@@ -25,4 +26,4 @@ select i,
        0.00,
        concat('user:', (i::varchar)),
        'U'
-from generate_series(2, 1000) as i;
+from generate_series(2, 10000) as i;
