@@ -72,7 +72,7 @@
 
     <profiles>
         <profile>
-            <id>demo-shade</id>
+            <id>demo-executable</id>
             <activation>
                 <activeByDefault>false</activeByDefault>
             </activation>

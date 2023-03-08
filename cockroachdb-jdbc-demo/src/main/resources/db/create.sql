@@ -1,8 +1,8 @@
-drop table if exists account;
+drop table if exists bank_account;
 
 create type if not exists account_type as enum ('S', 'U');
 
-create table if not exists account
+create table if not exists bank_account
 (
     id           int            not null primary key,
     balance      numeric(19, 2) not null,
@@ -11,19 +11,19 @@ create table if not exists account
     updated_at   timestamptz    not null default clock_timestamp()
 );
 
-alter table account
+alter table bank_account
     add constraint if not exists check_account_positive_balance check (balance >= 0);
 
-truncate table account;
+truncate table bank_account;
 
-insert into account (id, balance, name, type)
+insert into bank_account (id, balance, name, type)
 select i,
        100000.00,
        concat('system:', (i::varchar)),
        'S'
 from generate_series(1, 10) as i;
 
-insert into account (id, balance, name, type)
+insert into bank_account (id, balance, name, type)
 select i,
        0.00,
        concat('user:', (i::varchar)),

@@ -41,6 +41,8 @@ public class JdbcDriverDemo {
 
     private boolean printErrors;
 
+    boolean clientRetry;
+
     /**
      * Run the demo workload using the given datasource.
      *
@@ -59,29 +61,34 @@ public class JdbcDriverDemo {
         final List<Long> systemAccountIDs = findSystemAccountIDs(ds);
         if (systemAccountIDs.isEmpty()) {
             throw new IllegalStateException("No system accounts found!");
+
         }
+        final List<Long> userAccountIDs = findUserAccountIDs(ds);
+        logger.info("Found {} system and {} user accounts - scheduling workers for each", systemAccountIDs.size(),
+                userAccountIDs.size());
 
-        logger.info("Found {} system accounts - scheduling workers for each", systemAccountIDs.size());
-
-        // Use unbounded thread pool, the connection pool will throttle
+        // Unbounded thread pool is fine since the connection pool will throttle
         final ExecutorService unboundedPool = Executors.newScheduledThreadPool(concurrency);
 
         final Deque<Future<?>> futures = new ArrayDeque<>();
 
         systemAccountIDs.forEach(systemAccountId -> {
-            findUserAccountIDs(ds).forEach(userAccountId -> {
+            userAccountIDs.forEach(userAccountId -> {
                 futures.add(unboundedPool.submit(() -> {
-                            BigDecimal amount = new BigDecimal("100.00");
-                            List<AccountLeg> legs = new ArrayList<>();
-                            legs.add(new AccountLeg(systemAccountId, amount.negate()));
-                            legs.add(new AccountLeg(userAccountId, amount));
-                            return JdbcUtils.executeWithinTransaction(ds, transferFunds(legs));
-                        }
-                ));
+                    BigDecimal amount = new BigDecimal("100.00");
+                    List<AccountLeg> legs = new ArrayList<>();
+                    legs.add(new AccountLeg(systemAccountId, amount.negate()));
+                    legs.add(new AccountLeg(userAccountId, amount));
+                    if (clientRetry) {
+                        return JdbcUtils.executeWithinTransactionWithRetry(ds, transferFunds(legs));
+                    } else {
+                        return JdbcUtils.executeWithinTransaction(ds, transferFunds(legs));
+                    }
+                }));
             });
         });
 
-        logger.info("Scheduled {} workers", futures.size());
+        logger.info("Scheduled {} futures", futures.size());
 
         final int total = futures.size();
         int commits = 0;
@@ -92,8 +99,8 @@ public class JdbcDriverDemo {
 
         while (!futures.isEmpty()) {
             if (futures.size() % 100 == 0) {
-                logger.info("Awaiting completion ({} commits, {} rollbacks, {} violations, {} remaining)",
-                        commits, rollbacks, violations, futures.size());
+                logger.info("Awaiting completion ({} commits, {} rollbacks, {} violations, {} remaining)", commits,
+                        rollbacks, violations, futures.size());
             }
             try {
                 futures.pop().get();
@@ -124,35 +131,31 @@ public class JdbcDriverDemo {
 
         System.out.printf("\u001B[36m%,d rule violations\u001B[0m\n", violations);
         System.out.printf("\u001B[36m%.2f%% violation rate! %s\u001B[0m\n",
-                (violations / (double) (Math.max(1, total))) * 100.0,
-                violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
+                (violations / (double) (Math.max(1, total))) * 100.0, violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
 
-        System.out.printf("\u001B[33m%s execution time\u001B[0m\n",
-                Duration.between(callTime, Instant.now()));
+        System.out.printf("\u001B[33m%s execution time\u001B[0m\n", Duration.between(callTime, Instant.now()));
         System.out.printf("\u001B[33m%.2f avg TPS\u001B[0m\n",
                 ((double) total / (double) Duration.between(callTime, Instant.now()).toSeconds()));
     }
 
     private List<Long> findUserAccountIDs(DataSource ds) {
-        return JdbcUtils.select(ds, "SELECT id,type FROM account WHERE type='U' ORDER BY id",
-                resultSet -> {
-                    List<Long> ids = new ArrayList<>();
-                    while (resultSet.next()) {
-                        ids.add(resultSet.getLong(1));
-                    }
-                    return ids;
-                });
+        return JdbcUtils.select(ds, "SELECT id,type FROM bank_account WHERE type='U' ORDER BY id", resultSet -> {
+            List<Long> ids = new ArrayList<>();
+            while (resultSet.next()) {
+                ids.add(resultSet.getLong(1));
+            }
+            return ids;
+        });
     }
 
     private List<Long> findSystemAccountIDs(DataSource ds) {
-        return JdbcUtils.select(ds, "SELECT id,type FROM account WHERE type='S' ORDER BY id",
-                resultSet -> {
-                    List<Long> ids = new ArrayList<>();
-                    while (resultSet.next()) {
-                        ids.add(resultSet.getLong(1));
-                    }
-                    return ids;
-                });
+        return JdbcUtils.select(ds, "SELECT id,type FROM bank_account WHERE type='S' ORDER BY id", resultSet -> {
+            List<Long> ids = new ArrayList<>();
+            while (resultSet.next()) {
+                ids.add(resultSet.getLong(1));
+            }
+            return ids;
+        });
     }
 
     private ConnectionCallback<Void> transferFunds(List<AccountLeg> legs) {
@@ -161,13 +164,11 @@ public class JdbcDriverDemo {
 
             for (AccountLeg leg : legs) {
                 BigDecimal balance = readBalance(conn, leg.getId());
-
                 BigDecimal newBalance = balance.add(leg.getAmount());
-
                 if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
                     throw new BusinessException(
-                            "Negative balance outcome " + newBalance.toPlainString()
-                                    + " for account ID " + leg.getId());
+                            "Negative balance outcome " + newBalance.toPlainString() + " for account ID "
+                                    + leg.getId());
                 }
                 updateBalance(conn, leg.getId(), newBalance);
                 checksum = checksum.add(leg.getAmount());
@@ -175,8 +176,7 @@ public class JdbcDriverDemo {
 
             if (checksum.compareTo(BigDecimal.ZERO) != 0) {
                 throw new BusinessException(
-                        "Sum of account legs must equal zero (got " + checksum.toPlainString() + ")"
-                );
+                        "Sum of account legs must equal zero (got " + checksum.toPlainString() + ")");
             }
 
             return null;
@@ -184,8 +184,7 @@ public class JdbcDriverDemo {
     }
 
     private BigDecimal readBalance(Connection conn, Long id) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT balance FROM account WHERE id = ?")) {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT balance FROM bank_account WHERE id = ?")) {
             ps.setLong(1, id);
 
             try (ResultSet res = ps.executeQuery()) {
@@ -198,9 +197,8 @@ public class JdbcDriverDemo {
     }
 
     private void updateBalance(Connection conn, Long id, BigDecimal balance) throws SQLException {
-        try (PreparedStatement ps = conn
-                .prepareStatement(
-                        "UPDATE account SET balance = ?, updated_at=clock_timestamp() WHERE id = ?")) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE bank_account SET balance = ?, updated_at=clock_timestamp() WHERE id = ?")) {
             ps.setBigDecimal(1, balance);
             ps.setLong(2, id);
             if (ps.executeUpdate() != 1) {
@@ -220,11 +218,15 @@ public class JdbcDriverDemo {
 
         boolean sfu = false;
 
-        boolean retry = false;
+        boolean driverRetry = false;
+
+        boolean clientRetry = false;
 
         int concurrency = Runtime.getRuntime().availableProcessors() * 2;
 
         boolean printErrors = false;
+
+        boolean printHelpAndQuit = false;
 
         LinkedList<String> argsList = new LinkedList<>(Arrays.asList(args));
         while (!argsList.isEmpty()) {
@@ -241,23 +243,37 @@ public class JdbcDriverDemo {
                 traceSQL = true;
             } else if (arg.startsWith("--sfu")) {
                 sfu = true;
-            } else if (arg.startsWith("--retry")) {
-                retry = true;
+            } else if (arg.startsWith("--driverRetry")) {
+                driverRetry = true;
+            } else if (arg.startsWith("--clientRetry")) {
+                clientRetry = true;
             } else if (arg.startsWith("--printErrors")) {
                 printErrors = true;
+            } else if (arg.startsWith("--")) {
+                System.out.println("Unrecognized option: " + arg);
+                printHelpAndQuit = true;
+                break;
             } else {
-                System.out.println("Usage: java -jar cockroachdb-jdbc-demo.jar [options]");
-                System.out.println("Options include: (defaults in parenthesis)");
-                System.out.println("--sfu               enable implicit SFU (false)");
-                System.out.println("--retry             enable driver retry (false)");
-                System.out.println("--trace             enable SQL tracing (false)");
-                System.out.println("--concurrency N     number of threads (system x 2)");
-                System.out.println(
-                        "--url <url>         JDBC connection URL (jdbc:cockroachdb://localhost:26257/jdbc_test)");
-                System.out.println("--username <user>   JDBC login user name (root)");
-                System.out.println("--password <secret> JDBC login password (empty)");
-                System.exit(0);
+                System.out.println("Unrecognized argument: " + arg);
+                printHelpAndQuit = true;
+                break;
             }
+        }
+
+        if (printHelpAndQuit) {
+            System.out.println("Usage: java -jar cockroachdb-jdbc-demo.jar [options]");
+            System.out.println("Options include: (defaults in parenthesis)");
+            System.out.println("--sfu               enable implicit SFU (false)");
+            System.out.println("--driverRetry       enable JDBC driver transaction retries (false)");
+            System.out.println("--clientRetry       enable client/app transaction retries (false)");
+            System.out.println("--trace             enable SQL tracing (false)");
+            System.out.println("--printErrors       print exceptions to console (false)");
+            System.out.println("--concurrency N     number of threads (system x 2)");
+            System.out.println(
+                    "--url <url>         JDBC connection URL (jdbc:cockroachdb://localhost:26257/jdbc_test)");
+            System.out.println("--username <user>   JDBC login user name (root)");
+            System.out.println("--password <secret> JDBC login password (empty)");
+            System.exit(0);
         }
 
         final HikariDataSource hikariDS = new HikariDataSource();
@@ -274,27 +290,23 @@ public class JdbcDriverDemo {
         hikariDS.setInitializationFailTimeout(-1);
 
         hikariDS.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), sfu);
-        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), retry);
+        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), driverRetry);
         hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "30");
         hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15000");
-        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(), EmptyRetryListener.class.getName());
+        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(),
+                EmptyRetryListener.class.getName());
 
         hikariDS.addDataSourceProperty(PGProperty.REWRITE_BATCHED_INSERTS.getName(), "true");
 
-        DataSource ds = traceSQL ?
-                ProxyDataSourceBuilder
-                        .create(hikariDS)
-                        .asJson()
-                        .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
-                        .multiline()
-                        .build()
-                : hikariDS;
+        DataSource ds = traceSQL ? ProxyDataSourceBuilder.create(hikariDS).asJson()
+                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE").multiline().build() : hikariDS;
 
         SchemaSupport.setupSchema(ds);
 
         JdbcDriverDemo demo = new JdbcDriverDemo();
         demo.concurrency = concurrency;
         demo.printErrors = printErrors;
+        demo.clientRetry = clientRetry;
         demo.run(ds);
     }
 }

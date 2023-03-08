@@ -44,7 +44,7 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
         } catch (Throwable e) {
             ex = e;
         } finally {
-            executionTime = Duration.between(Instant.now(), callTime);
+            executionTime = Duration.between(callTime, Instant.now());
             if (methodTraceLogger != null) {
                 methodTraceLogger.log(ex, executionTime, connectionInfo(), getDelegate(), method, args);
             }
@@ -74,7 +74,7 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
             throw e;
         } finally {
             if (methodTraceLogger != null) {
-                methodTraceLogger.log(ex, Duration.between(Instant.now(), callTime), connectionInfo(),
+                methodTraceLogger.log(ex, Duration.between(callTime, Instant.now()), connectionInfo(),
                         getDelegate(), method, args);
             }
         }
