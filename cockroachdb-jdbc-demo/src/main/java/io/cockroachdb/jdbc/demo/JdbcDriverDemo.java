@@ -1,6 +1,5 @@
 package io.cockroachdb.jdbc.demo;
 
-import java.lang.reflect.UndeclaredThrowableException;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -30,13 +29,15 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import io.cockroachdb.jdbc.CockroachDriver;
 import io.cockroachdb.jdbc.CockroachProperty;
+import io.cockroachdb.jdbc.retry.EmptyRetryListener;
+import io.cockroachdb.jdbc.util.ExceptionUtils;
 import net.ttddyy.dsproxy.listener.logging.SLF4JLogLevel;
 import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 
 public class JdbcDriverDemo {
     private static final Logger logger = LoggerFactory.getLogger(JdbcDriverDemo.class);
 
-    private int concurrency;
+    private int concurrency = Runtime.getRuntime().availableProcessors() * 2;
 
     private boolean printErrors;
 
@@ -44,9 +45,8 @@ public class JdbcDriverDemo {
      * Run the demo workload using the given datasource.
      *
      * @param ds the datasource
-     * @throws SQLException on any errors
      */
-    public void run(DataSource ds) throws SQLException {
+    public void run(DataSource ds) {
         String version = JdbcUtils.select(ds, "select version()", resultSet -> {
             if (resultSet.next()) {
                 return resultSet.getString(1);
@@ -56,50 +56,44 @@ public class JdbcDriverDemo {
 
         logger.info("Connected to \"{}\"", version);
 
-        final ExecutorService unboundedPool = Executors.newScheduledThreadPool(concurrency);
-        final Deque<Future<?>> futures = new ArrayDeque<>();
-
-        final List<Long> systemAccounts =
-                JdbcUtils.select(ds, "SELECT id,account_type FROM account WHERE account_type='S' ORDER BY id",
-                        resultSet -> {
-                            List<Long> ids = new ArrayList<>();
-                            while (resultSet.next()) {
-                                ids.add(resultSet.getLong(1));
-                            }
-                            return ids;
-                        });
-
-        if (systemAccounts.isEmpty()) {
+        final List<Long> systemAccountIDs = findSystemAccountIDs(ds);
+        if (systemAccountIDs.isEmpty()) {
             throw new IllegalStateException("No system accounts found!");
         }
 
-        logger.info("Found {} system accounts - scheduling workers", systemAccounts.size());
+        logger.info("Found {} system accounts - scheduling workers for each", systemAccountIDs.size());
 
-        JdbcUtils.select(ds, "SELECT id,account_type FROM account WHERE account_type='U' ORDER BY id", resultSet -> {
-            final BigDecimal amount = new BigDecimal("100.00");
-            while (resultSet.next()) {
-                Long id = resultSet.getLong(1);
+        // Use unbounded thread pool, the connection pool will throttle
+        final ExecutorService unboundedPool = Executors.newScheduledThreadPool(concurrency);
+
+        final Deque<Future<?>> futures = new ArrayDeque<>();
+
+        systemAccountIDs.forEach(systemAccountId -> {
+            findUserAccountIDs(ds).forEach(userAccountId -> {
                 futures.add(unboundedPool.submit(() -> {
+                            BigDecimal amount = new BigDecimal("100.00");
                             List<AccountLeg> legs = new ArrayList<>();
-                            legs.add(new AccountLeg(systemAccounts.get(0), amount.negate()));
-                            legs.add(new AccountLeg(id, amount));
+                            legs.add(new AccountLeg(systemAccountId, amount.negate()));
+                            legs.add(new AccountLeg(userAccountId, amount));
                             return JdbcUtils.executeWithinTransaction(ds, transferFunds(legs));
                         }
                 ));
-            }
-            logger.info("Scheduled {} workers", futures.size());
-            return null;
+            });
         });
 
+        logger.info("Scheduled {} workers", futures.size());
+
+        final int total = futures.size();
         int commits = 0;
         int rollbacks = 0;
+        int violations = 0;
 
         final Instant callTime = Instant.now();
 
         while (!futures.isEmpty()) {
-            if (futures.size() % 10 == 0) {
-                logger.info("Awaiting completion ({} commits {} rollbacks {} remaining)",
-                        commits, rollbacks, futures.size());
+            if (futures.size() % 100 == 0) {
+                logger.info("Awaiting completion ({} commits, {} rollbacks, {} violations, {} remaining)",
+                        commits, rollbacks, violations, futures.size());
             }
             try {
                 futures.pop().get();
@@ -108,26 +102,57 @@ public class JdbcDriverDemo {
                 Thread.currentThread().interrupt();
                 break;
             } catch (ExecutionException e) {
-                rollbacks++;
+                Throwable throwable = ExceptionUtils.getMostSpecificCause(e);
+                if (throwable instanceof BusinessException) {
+                    violations++;
+                } else {
+                    rollbacks++;
+                }
                 if (printErrors) {
-                    if (e.getCause() instanceof UndeclaredThrowableException) {
-                        Throwable throwable = ((UndeclaredThrowableException) e.getCause()).getUndeclaredThrowable();
-                        logger.warn(throwable.toString());
-                    } else {
-                        logger.warn(e.getCause().toString());
-                    }
+                    logger.warn(throwable.toString());
                 }
             }
         }
 
         unboundedPool.shutdownNow();
 
-        System.out.printf("\u001B[33mCommits (%d) Rollbacks (%d) Commit Rate (%.2f%%)\u001B[36m\n%s\u001B[0m\nRuntime %s\n",
-                commits,
-                rollbacks,
-                100 - (rollbacks / (double) (Math.max(1, commits + rollbacks))) * 100.0,
-                rollbacks > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯",
+        System.out.printf("\u001B[36m%,d commits\u001B[0m\n", commits);
+        System.out.printf("\u001B[36m%,d rollbacks\u001B[0m\n", rollbacks);
+        System.out.printf("\u001B[36m%.2f%% commit rate! %s\u001B[0m\n",
+                100 - (rollbacks / (double) (Math.max(1, total))) * 100.0,
+                rollbacks > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
+
+        System.out.printf("\u001B[36m%,d rule violations\u001B[0m\n", violations);
+        System.out.printf("\u001B[36m%.2f%% violation rate! %s\u001B[0m\n",
+                (violations / (double) (Math.max(1, total))) * 100.0,
+                violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
+
+        System.out.printf("\u001B[33m%s execution time\u001B[0m\n",
                 Duration.between(callTime, Instant.now()));
+        System.out.printf("\u001B[33m%.2f avg TPS\u001B[0m\n",
+                ((double) total / (double) Duration.between(callTime, Instant.now()).toSeconds()));
+    }
+
+    private List<Long> findUserAccountIDs(DataSource ds) {
+        return JdbcUtils.select(ds, "SELECT id,type FROM account WHERE type='U' ORDER BY id",
+                resultSet -> {
+                    List<Long> ids = new ArrayList<>();
+                    while (resultSet.next()) {
+                        ids.add(resultSet.getLong(1));
+                    }
+                    return ids;
+                });
+    }
+
+    private List<Long> findSystemAccountIDs(DataSource ds) {
+        return JdbcUtils.select(ds, "SELECT id,type FROM account WHERE type='S' ORDER BY id",
+                resultSet -> {
+                    List<Long> ids = new ArrayList<>();
+                    while (resultSet.next()) {
+                        ids.add(resultSet.getLong(1));
+                    }
+                    return ids;
+                });
     }
 
     private ConnectionCallback<Void> transferFunds(List<AccountLeg> legs) {
@@ -140,7 +165,7 @@ public class JdbcDriverDemo {
                 BigDecimal newBalance = balance.add(leg.getAmount());
 
                 if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
-                    throw new DataAccessException(
+                    throw new BusinessException(
                             "Negative balance outcome " + newBalance.toPlainString()
                                     + " for account ID " + leg.getId());
                 }
@@ -149,7 +174,7 @@ public class JdbcDriverDemo {
             }
 
             if (checksum.compareTo(BigDecimal.ZERO) != 0) {
-                throw new DataAccessException(
+                throw new BusinessException(
                         "Sum of account legs must equal zero (got " + checksum.toPlainString() + ")"
                 );
             }
@@ -252,6 +277,7 @@ public class JdbcDriverDemo {
         hikariDS.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), retry);
         hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "30");
         hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15000");
+        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(), EmptyRetryListener.class.getName());
 
         hikariDS.addDataSourceProperty(PGProperty.REWRITE_BATCHED_INSERTS.getName(), "true");
 

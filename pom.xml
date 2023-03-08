@@ -8,7 +8,7 @@
     <version>0.9.4-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>CockroachDB JDBC Project</name>
+    <name>CockroachDB JDBC Driver Project</name>
     <description>Parent project for CockroachDB JDBC driver</description>
 
     <inceptionYear>2023</inceptionYear>

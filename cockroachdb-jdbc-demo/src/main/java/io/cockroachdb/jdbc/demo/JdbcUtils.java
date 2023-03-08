@@ -14,26 +14,15 @@ public abstract class JdbcUtils {
 
     public static <T> T select(DataSource dataSource, String sql,
                                ResultSetCallback<T> action)
-            throws SQLException {
+            throws DataAccessException {
         try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 try (ResultSet rs = ps.executeQuery()) {
                     return action.process(rs);
                 }
             }
-        }
-    }
-
-    public static int update(DataSource dataSource, String sql, Object... params)
-            throws SQLException {
-        try (Connection connection = dataSource.getConnection()) {
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                int idx = 1;
-                for (Object p : params) {
-                    ps.setObject(idx++, p);
-                }
-                return ps.executeUpdate();
-            }
+        } catch (SQLException ex) {
+            throw new DataAccessException(ex);
         }
     }
 
