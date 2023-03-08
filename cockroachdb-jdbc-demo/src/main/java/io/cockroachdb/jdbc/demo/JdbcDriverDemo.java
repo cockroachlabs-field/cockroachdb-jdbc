@@ -72,6 +72,8 @@ public class JdbcDriverDemo {
 
         final Deque<Future<?>> futures = new ArrayDeque<>();
 
+        final Instant callTime = Instant.now();
+
         systemAccountIDs.forEach(systemAccountId -> {
             userAccountIDs.forEach(userAccountId -> {
                 futures.add(unboundedPool.submit(() -> {
@@ -94,8 +96,6 @@ public class JdbcDriverDemo {
         int commits = 0;
         int rollbacks = 0;
         int violations = 0;
-
-        final Instant callTime = Instant.now();
 
         while (!futures.isEmpty()) {
             if (futures.size() % 100 == 0) {
@@ -131,7 +131,8 @@ public class JdbcDriverDemo {
 
         System.out.printf("\u001B[36m%,d rule violations\u001B[0m\n", violations);
         System.out.printf("\u001B[36m%.2f%% violation rate! %s\u001B[0m\n",
-                (violations / (double) (Math.max(1, total))) * 100.0, violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
+                (violations / (double) (Math.max(1, total))) * 100.0,
+                violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
 
         System.out.printf("\u001B[33m%s execution time\u001B[0m\n", Duration.between(callTime, Instant.now()));
         System.out.printf("\u001B[33m%.2f avg TPS\u001B[0m\n",
@@ -214,6 +215,8 @@ public class JdbcDriverDemo {
 
         String password = "";
 
+        String isolationLevel = "READ_COMMITTED";
+
         boolean traceSQL = false;
 
         boolean sfu = false;
@@ -235,10 +238,12 @@ public class JdbcDriverDemo {
                 concurrency = Integer.parseInt(argsList.pop());
             } else if (arg.startsWith("--url")) {
                 url = argsList.pop();
-            } else if (arg.startsWith("--username")) {
+            } else if (arg.startsWith("--user")) {
                 username = argsList.pop();
             } else if (arg.startsWith("--password")) {
                 password = argsList.pop();
+            } else if (arg.startsWith("--isolation")) {
+                isolationLevel = argsList.pop();
             } else if (arg.startsWith("--trace")) {
                 traceSQL = true;
             } else if (arg.startsWith("--sfu")) {
@@ -268,17 +273,17 @@ public class JdbcDriverDemo {
             System.out.println("--clientRetry       enable client/app transaction retries (false)");
             System.out.println("--trace             enable SQL tracing (false)");
             System.out.println("--printErrors       print exceptions to console (false)");
-            System.out.println("--concurrency N     number of threads (system x 2)");
+            System.out.println("--isolation <level> transaction isolation level when using psql (READ_COMMITTED)");
+            System.out.println("--concurrency <N>   number of threads (system x 2)");
             System.out.println(
                     "--url <url>         JDBC connection URL (jdbc:cockroachdb://localhost:26257/jdbc_test)");
-            System.out.println("--username <user>   JDBC login user name (root)");
+            System.out.println("--user <user>       JDBC login user name (root)");
             System.out.println("--password <secret> JDBC login password (empty)");
             System.exit(0);
         }
 
         final HikariDataSource hikariDS = new HikariDataSource();
         hikariDS.setJdbcUrl(url);
-        hikariDS.setDriverClassName(CockroachDriver.class.getName());
         hikariDS.setUsername(username);
         hikariDS.setPassword(password);
         hikariDS.setAutoCommit(true);
@@ -287,19 +292,29 @@ public class JdbcDriverDemo {
         hikariDS.setMaxLifetime(TimeUnit.MINUTES.toMillis(3));
         hikariDS.setIdleTimeout(TimeUnit.MINUTES.toMillis(1));
         hikariDS.setConnectionTimeout(TimeUnit.MINUTES.toMillis(1));
-        hikariDS.setInitializationFailTimeout(-1);
 
-        hikariDS.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), sfu);
-        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), driverRetry);
-        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "30");
-        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15000");
-        hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(),
-                EmptyRetryListener.class.getName());
-
+        // No INSERTs in this demo, but still
         hikariDS.addDataSourceProperty(PGProperty.REWRITE_BATCHED_INSERTS.getName(), "true");
 
-        DataSource ds = traceSQL ? ProxyDataSourceBuilder.create(hikariDS).asJson()
-                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE").multiline().build() : hikariDS;
+        if (url.startsWith(CockroachDriver.DRIVER_PREFIX)) {
+            hikariDS.setDriverClassName(CockroachDriver.class.getName());
+            hikariDS.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), sfu);
+            hikariDS.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), driverRetry);
+            hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "30");
+            hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15000");
+            hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(),
+                    EmptyRetryListener.class.getName());
+        } else {
+            hikariDS.setTransactionIsolation("TRANSACTION_" + isolationLevel);
+        }
+
+        DataSource ds = traceSQL
+                ? ProxyDataSourceBuilder.create(hikariDS)
+                .asJson()
+                .logQueryBySlf4j(SLF4JLogLevel.TRACE, "io.cockroachdb.jdbc.SQL_TRACE")
+                .multiline()
+                .build()
+                : hikariDS;
 
         SchemaSupport.setupSchema(ds);
 
