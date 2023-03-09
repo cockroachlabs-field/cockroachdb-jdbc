@@ -45,11 +45,13 @@ public class BatchInsertTest extends AbstractIntegrationTest {
     @Order(1)
     @ParameterizedTest
     @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
-    public void whenInsertProducts_thenObserveBulkUpdates(int batchSize) throws Exception {
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11, 1 << 12})
+    public void whenInsertingProductsUsingBatchStatements_thenObserveTimes(int batchSize) throws Exception {
         Assertions.assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "TX active");
 
         List<Product> products = new ArrayList<>();
+
+        logger.info("INSERT {} products using batches of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
 
         IntStream.rangeClosed(1, PRODUCTS_PER_BATCH_COUNT).forEach(value -> {
             Product product = new Product();
@@ -66,14 +68,13 @@ public class BatchInsertTest extends AbstractIntegrationTest {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
 
-            logger.info("INSERT {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
-
             final Instant startTime = Instant.now();
             final AtomicInteger n = new AtomicInteger();
             final int totalChunks = Math.round(PRODUCTS_PER_BATCH_COUNT * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
+                System.out.printf("%s\n",
+                        TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "INSERT INTO product (id,inventory,price,name,sku) values (?,?,?,?,?)")) {
@@ -105,11 +106,13 @@ public class BatchInsertTest extends AbstractIntegrationTest {
     @Order(2)
     @ParameterizedTest
     @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
-    public void whenUpsertProducts_thenObserveBulkUpdates(int batchSize) throws Exception {
+            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11, 1 << 12})
+    public void whenInsertingProductsUsingFromStatements_thenObserveTimes(int batchSize) throws Exception {
         Assertions.assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "TX active");
 
         List<Product> products = new ArrayList<>();
+
+        logger.info("INSERT .. FROM {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
 
         IntStream.rangeClosed(1, PRODUCTS_PER_BATCH_COUNT).forEach(value -> {
             Product product = new Product();
@@ -126,14 +129,13 @@ public class BatchInsertTest extends AbstractIntegrationTest {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
 
-            logger.info("UPSERT {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
-
             final Instant startTime = Instant.now();
             final AtomicInteger n = new AtomicInteger();
             final int totalChunks = Math.round(PRODUCTS_PER_BATCH_COUNT * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
+                System.out.printf("%s\n",
+                        TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "INSERT INTO product(id,inventory,price,name,sku)"
