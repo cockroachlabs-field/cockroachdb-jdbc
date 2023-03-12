@@ -1,4 +1,4 @@
-package io.cockroachdb.jdbc.meta;
+package io.cockroachdb.jdbc;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -10,8 +10,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import io.cockroachdb.jdbc.CockroachDriverInfo;
 
 @Tag("unit-test")
 public class DatabaseMetaDataProxyTest {

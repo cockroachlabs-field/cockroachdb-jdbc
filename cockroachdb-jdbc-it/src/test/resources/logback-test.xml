@@ -15,8 +15,7 @@
     <logger name="org.springframework" level="INFO"/>
 
     <logger name="io.cockroachdb.jdbc" level="INFO"/>
-    <!-- Change to TRACE to enable SQL tracing via ttddyy -->
-    <logger name="io.cockroachdb.jdbc.SQL_TRACE" level="DEBUG"/>
+    <logger name="io.cockroachdb.jdbc.SQL_TRACE" level="INFO"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

@@ -126,7 +126,7 @@
                         <configuration>
                             <groups>${groups}</groups>
                             <argLine>
-                                -Dspring.profiles.active=dedicated
+                                -Dspring.profiles.active=dedicated,ds-hikari
                             </argLine>
                         </configuration>
                     </plugin>
@@ -144,7 +144,7 @@
                         <configuration>
                             <groups>${groups}</groups>
                             <argLine>
-                                -Dspring.profiles.active=dev
+                                -Dspring.profiles.active=dev,ds-hikari
                             </argLine>
                         </configuration>
                     </plugin>

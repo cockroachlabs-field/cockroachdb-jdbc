@@ -12,7 +12,7 @@ import org.mockito.Mockito;
 import io.cockroachdb.jdbc.ConnectionSettings;
 
 @Tag("unit-test")
-public class StatementProxyTest {
+public class StatementInterceptorTest {
     @Test
     public void whenProxyingStatementMethods_expectPassThroughToDelegate() throws SQLException {
         Statement statementMock = Mockito.mock(Statement.class);
@@ -40,7 +40,8 @@ public class StatementProxyTest {
 
         ConnectionSettings settings = new ConnectionSettings();
         settings.setRetryStrategy(strategy);
-        settings.setRetryListener(properties -> {});
+        settings.setRetryListener(properties -> {
+        });
 
         Connection retryConnectionMock = Mockito.mock(Connection.class);
         Mockito.when(retryConnectionMock.isValid(Mockito.anyInt())).thenReturn(true);
@@ -56,7 +57,7 @@ public class StatementProxyTest {
 
         Statement proxy = StatementRetryInterceptor.proxy(statementMock, retryProxyStub);
 
-        Assertions.assertThrows(SurrenderRetryException.class, () -> proxy.executeQuery("select 1"));
+        Assertions.assertThrows(TooManyRetriesException.class, () -> proxy.executeQuery("select 1"));
 
         Mockito.verify(statementMock, Mockito.times(retrys + 1)).executeQuery("select 1");
     }

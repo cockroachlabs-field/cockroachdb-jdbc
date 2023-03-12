@@ -23,11 +23,8 @@ public class PreparedStatementRetryInterceptor extends AbstractRetryInterceptor<
     protected PreparedStatementRetryInterceptor(PreparedStatement delegate,
                                                 ConnectionRetryInterceptor connectionRetryInterceptor) {
         super(delegate);
-
         this.connectionRetryInterceptor = connectionRetryInterceptor;
-
-        setMethodTraceLogger(MethodTraceLogger.createInstance(logger)
-                .setMasked(connectionRetryInterceptor.getConnectionSettings().isMaskSQLTrace()));
+        setMethodTraceLogger(connectionRetryInterceptor.getConnectionSettings().getMethodTraceLogger());
     }
 
     @Override

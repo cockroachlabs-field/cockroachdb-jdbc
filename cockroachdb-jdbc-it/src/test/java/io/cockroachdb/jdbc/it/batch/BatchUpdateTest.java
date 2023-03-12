@@ -24,8 +24,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import io.cockroachdb.jdbc.it.AbstractIntegrationTest;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.JdbcTestUtils;
-import io.cockroachdb.jdbc.it.util.TextUtils;
+import io.cockroachdb.jdbc.it.util.util.JdbcHelper;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
 @Order(2)
@@ -56,9 +56,10 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
 
         List<Product> products = findAll(PRODUCTS_PER_BATCH_COUNT);
 
-        Assertions.assertEquals(PRODUCTS_PER_BATCH_COUNT, products.size(), "Not enough data - run the BatchInsertTest first");
+        Assertions.assertEquals(PRODUCTS_PER_BATCH_COUNT, products.size(),
+                "Not enough data - run the BatchInsertTest first");
 
-        Stream<List<Product>> chunks = JdbcTestUtils.chunkedStream(products.stream(), batchSize);
+        Stream<List<Product>> chunks = JdbcHelper.chunkedStream(products.stream(), batchSize);
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
@@ -70,7 +71,7 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
             final int totalChunks = Math.round(products.size() * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(),batchSize+""));
+                System.out.printf("\r%s", PrettyText.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "UPDATE product SET inventory=?, price=? WHERE id=?")) {
@@ -97,7 +98,7 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
 
             logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
-                    TextUtils.shrug());
+                    PrettyText.shrug());
         }
     }
 
@@ -110,9 +111,10 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
 
         List<Product> products = findAll(PRODUCTS_PER_BATCH_COUNT);
 
-        Assertions.assertEquals(PRODUCTS_PER_BATCH_COUNT, products.size(), "Not enough data - run the BatchInsertTest first");
+        Assertions.assertEquals(PRODUCTS_PER_BATCH_COUNT, products.size(),
+                "Not enough data - run the BatchInsertTest first");
 
-        Stream<List<Product>> chunks = JdbcTestUtils.chunkedStream(products.stream(), batchSize);
+        Stream<List<Product>> chunks = JdbcHelper.chunkedStream(products.stream(), batchSize);
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
@@ -124,7 +126,7 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
             final int totalChunks = Math.round(products.size() * 1f / batchSize);
 
             chunks.forEach(chunk -> {
-                System.out.printf("\r%s", TextUtils.progressBar(totalChunks, n.incrementAndGet(),batchSize+""));
+                System.out.printf("\r%s", PrettyText.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "UPDATE product SET inventory=data_table.new_inventory, price=data_table.new_price "
@@ -158,7 +160,7 @@ public class BatchUpdateTest extends AbstractIntegrationTest {
 
             logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
-                    TextUtils.shrug());
+                    PrettyText.shrug());
         }
 
     }

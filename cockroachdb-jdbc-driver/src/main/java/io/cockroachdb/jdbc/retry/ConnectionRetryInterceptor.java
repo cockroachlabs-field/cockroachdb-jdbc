@@ -10,15 +10,14 @@ import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
-import java.util.Optional;
 
+import org.postgresql.util.PSQLState;
 import org.slf4j.MDC;
 
-import io.cockroachdb.jdbc.CockroachException;
 import io.cockroachdb.jdbc.CockroachPreparedStatement;
 import io.cockroachdb.jdbc.CockroachStatement;
 import io.cockroachdb.jdbc.ConnectionSettings;
+import io.cockroachdb.jdbc.InvalidConnectionException;
 import io.cockroachdb.jdbc.util.Assert;
 import io.cockroachdb.jdbc.util.ExceptionUtils;
 import io.cockroachdb.jdbc.util.ResourceSupplier;
@@ -57,9 +56,6 @@ public class ConnectionRetryInterceptor extends AbstractRetryInterceptor<Connect
         this.retryListener = connectionSettings.getRetryListener();
         this.retryStrategy = connectionSettings.getRetryStrategy();
 
-        Assert.notNull(retryListener, "retryListener is null");
-        Assert.notNull(retryStrategy, "retryStrategy");
-
         setMethodTraceLogger(connectionSettings.getMethodTraceLogger());
     }
 
@@ -69,7 +65,11 @@ public class ConnectionRetryInterceptor extends AbstractRetryInterceptor<Connect
 
     @Override
     protected String connectionInfo() {
-        return Objects.toString(getDelegate());
+        return connectionInfo(getDelegate());
+    }
+
+    protected String connectionInfo(Connection connection) {
+        return "connection@" + Integer.toHexString(connection.hashCode());
     }
 
     @Override
@@ -119,8 +119,7 @@ public class ConnectionRetryInterceptor extends AbstractRetryInterceptor<Connect
             addMethodExecution(context);
 
             CockroachStatement cockroachStatement
-                    = new CockroachStatement((Statement) context.getResult(),
-                    Optional.ofNullable(connectionSettings.getQueryProcessor()).orElse((connection, sql) -> sql));
+                    = new CockroachStatement((Statement) context.getResult(), connectionSettings);
             Statement statementRetryProxy
                     = StatementRetryInterceptor.proxy(cockroachStatement, this);
             context.setResult(statementRetryProxy);
@@ -158,45 +157,60 @@ public class ConnectionRetryInterceptor extends AbstractRetryInterceptor<Connect
                 attempt, ExceptionUtils.toNestedString(rootCauseException));
 
         for (; ; attempt++) {
-            final int currentAttempt = attempt;
+            try {
+                closeDelegate(attempt);
+            } catch (SQLException ex) {
+                // Unless it's a connection related error, we can't continue
+                if (!retryStrategy.isConnectionError(ex)) {
+                    throw new RollbackException("Exception on rollback before retry", ex);
+                }
+                // Let connection errors pass through with a warning since these are potentially retried
+                logger.warn("SQL exception in rollback for connection delegate [{}]\n{}",
+                        connectionInfo(), ExceptionUtils.toNestedString(ex));
+            }
 
-            if (!retryStrategy.proceedWithRetry(attempt, startTime)) {
-                throw new SurrenderRetryException("Too many retry attempts [" + attempt
+            if (!retryStrategy.proceedWithRetry(attempt)) {
+                throw new TooManyRetriesException("Too many retry attempts [" + attempt
                         + "] or other limit in [" + retryStrategy.getDescription() + "]", rootCauseException);
             }
 
-            MDC.put("retry.connection", connectionInfo());
+            Duration waitTime = retryStrategy.getBackoffDuration(attempt);
+
             MDC.put("retry.attempt", attempt + "");
 
-            retryListener.beforeRetry(method.toGenericString(), attempt, rootCauseException,
-                    Duration.between(startTime, Instant.now()));
-
-            closeDelegate(attempt);
+            retryListener.beforeRetry(method.toGenericString(), attempt, rootCauseException, waitTime);
 
             // Pause current thread for a delay determined by strategy
-            retryStrategy.waitBeforeRetry(attempt, startTime, duration ->
-                    logger.debug("Waiting [{}] for attempt [{}]", duration, currentAttempt));
+            try {
+                Thread.sleep(waitTime.toMillis());
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
 
-            if (openDelegate(attempt, rootCauseException)) {
-                SQLException retryException = rootCauseException;
-                try {
-                    // At this point we have a new, valid connection delegate and ready to replay history
-                    retry(getDelegate());
-                    break;
-                } catch (CockroachException ex) {
-                    retryException = ex;
+            SQLException retryException = rootCauseException;
+
+            try {
+                openDelegate(attempt);
+
+                MDC.put("retry.connection", connectionInfo());
+
+                // At this point we have a new, valid connection delegate and ready to replay history
+                retry(getDelegate());
+                // Signal success
+                retryException = null;
+                break;
+            } catch (SQLException ex) {
+                retryException = ex;
+                // Unless it's a retryable error (which may include connection error) we can't continue
+                if (!retryStrategy.isConnectionError(ex)) {
                     throw ex.initCause(rootCauseException);
-                } catch (SQLException ex) {
-                    retryException = ex;
-                    if (!retryStrategy.isRetryableException(ex)) {
-                        throw ex.initCause(rootCauseException);
-                    }
-                } finally {
-                    retryListener.afterRetry(method.toGenericString(), attempt, retryException,
-                            Duration.between(startTime, Instant.now()));
-                    MDC.clear();
                 }
-            } else {
+                logger.debug("SQL exception in attempt [{}]\n{}",
+                        attempt, ExceptionUtils.toNestedString(ex));
+            } finally {
+                retryListener.afterRetry(method.toGenericString(), attempt,
+                        retryException,
+                        Duration.between(startTime, Instant.now()));
                 MDC.clear();
             }
         }
@@ -204,55 +218,41 @@ public class ConnectionRetryInterceptor extends AbstractRetryInterceptor<Connect
         return attempt;
     }
 
-    private boolean openDelegate(int attempt, SQLException sqlException) throws SQLException {
-        try {
-            logger.debug("Opening new connection for attempt [{}]", attempt);
-            Connection delegate = connectionSupplier.get();
-            if (delegate.getAutoCommit()) {
-                throw new UncategorizedRetryException("Connection cannot be in auto-commit mode", sqlException);
-            }
-            if (!delegate.isValid(10)) {
-                throw new UncategorizedRetryException("Connection is invalid", sqlException);
-            }
-            Connection expiredDelegate = getDelegate();
-            setDelegate(delegate);
-            logger.debug("Opened new connection delegate [{}] replacing [{}]", delegate, expiredDelegate);
-        } catch (SQLException ex) {
-            // Unless it's a retryable error (which may include connection error) we can't continue
-            if (!retryStrategy.isRetryableException(ex)) {
-                throw ex;
-            }
-            logger.warn("SQL exception in connection attempt [{}]\n{}",
-                    attempt, ExceptionUtils.toNestedString(ex));
-            return false;
+    private void openDelegate(int attempt) throws SQLException {
+        logger.debug("Opening new connection for attempt [{}]", attempt);
+        Connection newDelegate = connectionSupplier.get();
+        if (newDelegate.getAutoCommit()) {
+            throw new InvalidConnectionException("Connection is in auto-commit mode",
+                    PSQLState.UNEXPECTED_ERROR);
         }
-        return true;
+        if (!newDelegate.isValid(10)) {
+            throw new InvalidConnectionException("Connection is invalid",
+                    PSQLState.CONNECTION_UNABLE_TO_CONNECT);
+        }
+        SQLWarning warning = newDelegate.getWarnings();
+        if (warning != null) {
+            logger.warn("There are warnings:\n{}", ExceptionUtils.toNestedString(warning));
+        }
+        Connection expiredDelegate = getDelegate();
+        setDelegate(newDelegate);
+        logger.debug("Opened new connection [{}] replacing [{}]",
+                connectionInfo(newDelegate), connectionInfo(expiredDelegate));
     }
 
     private void closeDelegate(int attempt) throws SQLException {
         Connection expiredDelegate = getDelegate();
         if (expiredDelegate.isClosed()) {
-            logger.debug("Connection delegate [{}] already closed for attempt [{}]",
-                    expiredDelegate, attempt);
-            return;
-        }
-        try {
-            logger.debug("Rollback and close connection delegate [{}] for attempt [{}]",
-                    expiredDelegate, attempt);
+            logger.debug("Connection [{}] already closed",
+                    connectionInfo(expiredDelegate));
+        } else {
+            logger.debug("Rollback and close connection [{}] for attempt [{}]",
+                    connectionInfo(expiredDelegate), attempt);
             SQLWarning warning = expiredDelegate.getWarnings();
             if (warning != null) {
-                logger.debug("There are warnings:\n{}", ExceptionUtils.toNestedString(warning));
+                logger.warn("There are warnings:\n{}", ExceptionUtils.toNestedString(warning));
             }
             expiredDelegate.rollback();
             expiredDelegate.close();
-        } catch (SQLException ex) {
-            // Unless it's a connection related error, we can't continue
-            if (!retryStrategy.isConnectionError(ex)) {
-                throw new UncategorizedRetryException("Exception on rollback", ex);
-            }
-            // Let connection errors pass through with a warning since these are potentially retried
-            logger.warn("SQL exception in rollback for connection delegate [{}]\n{}",
-                    expiredDelegate, ExceptionUtils.toNestedString(ex));
         }
     }
 
@@ -279,7 +279,7 @@ public class ConnectionRetryInterceptor extends AbstractRetryInterceptor<Connect
                             (StatementRetryInterceptor) Proxy.getInvocationHandler(firstResult);
                     firstProxy.retry((Statement) lastResult);
                 } else {
-                    throw new UncategorizedRetryException("Unknown JDBC proxy: " + firstResult);
+                    throw new UnsupportedOperationException("Unknown JDBC proxy: " + firstResult);
                 }
             }
         }

@@ -11,9 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import io.cockroachdb.jdbc.ConnectionSettings;
+import io.cockroachdb.jdbc.query.QueryProcessor;
 
 @Tag("unit-test")
-public class ConnectionRetryProxyTest {
+public class ConnectionRetryInterceptorTest {
     @Test
     public void whenProxyingConnectionMethods_expectPassThroughToDelegate() throws SQLException {
         Connection connectionMock = Mockito.mock(Connection.class);
@@ -29,7 +30,8 @@ public class ConnectionRetryProxyTest {
         Connection proxy = ConnectionRetryInterceptor.proxy(connectionMock,
                 new ConnectionSettings()
                         .setRetryListener(Mockito.mock(RetryListener.class))
-                        .setRetryStrategy(Mockito.mock(RetryStrategy.class)),
+                        .setRetryStrategy(Mockito.mock(RetryStrategy.class))
+                        .setQueryProcessor(Mockito.mock(QueryProcessor.class)),
                 () -> {
                     Assertions.fail();
                     return null;
@@ -75,7 +77,7 @@ public class ConnectionRetryProxyTest {
 
         Connection proxy = ConnectionRetryInterceptor.proxy(primaryMock, settings, () -> retryMock);
 
-        Assertions.assertThrows(SurrenderRetryException.class, () -> proxy.commit());
+        Assertions.assertThrows(TooManyRetriesException.class, () -> proxy.commit());
 
         Mockito.verify(primaryMock, Mockito.times(1)).commit();
         Mockito.verify(retryMock, Mockito.times(5)).commit();
@@ -130,7 +132,7 @@ public class ConnectionRetryProxyTest {
 
         Connection proxy = ConnectionRetryInterceptor.proxy(primaryMock, settings, () -> retryMock);
 
-        Assertions.assertThrows(UncategorizedRetryException.class, () -> proxy.commit());
+        Assertions.assertThrows(RollbackException.class, () -> proxy.commit());
 
         Mockito.verify(primaryMock, Mockito.times(1)).commit();
         Mockito.verify(primaryMock, Mockito.times(1)).rollback();

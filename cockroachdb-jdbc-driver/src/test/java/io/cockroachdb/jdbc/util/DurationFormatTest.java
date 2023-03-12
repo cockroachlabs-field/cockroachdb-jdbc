@@ -21,6 +21,9 @@ public class DurationFormatTest {
 
     @Test
     public void testDurationExpressions() {
+        Assertions.assertEquals(Duration.ofMillis(150), DurationFormat.parseDuration("150ms"));
+        Assertions.assertEquals(Duration.ofMinutes(2).plus(Duration.ofSeconds(3).plus(Duration.ofMillis(125))),
+                DurationFormat.parseDuration("2m 3s 125ms"));
         Assertions.assertEquals(Duration.ofMillis(0), DurationFormat.parseDuration("0"));
         Assertions.assertEquals(Duration.ofMillis(0), DurationFormat.parseDuration("0s"));
         Assertions.assertEquals(Duration.ofMillis(30), DurationFormat.parseDuration("30"));

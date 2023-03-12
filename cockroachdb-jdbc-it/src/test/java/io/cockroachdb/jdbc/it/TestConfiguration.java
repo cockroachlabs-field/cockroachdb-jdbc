@@ -23,6 +23,7 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import io.cockroachdb.jdbc.CockroachDataSource;
 import io.cockroachdb.jdbc.CockroachProperty;
+import io.cockroachdb.jdbc.retry.LoggingRetryListener;
 import net.ttddyy.dsproxy.listener.logging.SLF4JLogLevel;
 import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 
@@ -30,9 +31,9 @@ import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 @EnableAutoConfiguration(exclude = {
         DataSourceAutoConfiguration.class
 })
-@ComponentScan(basePackageClasses = IntegrationTestConfiguration.class)
+@ComponentScan(basePackageClasses = TestConfiguration.class)
 @Configuration
-public class IntegrationTestConfiguration {
+public class TestConfiguration {
     @Autowired
     private Environment environment;
 
@@ -117,5 +118,10 @@ public class IntegrationTestConfiguration {
                 .asJson()
 //                .multiline()
                 .build();
+    }
+
+    @Bean
+    public LoggingRetryListener loggingRetryListener() {
+        return new LoggingRetryListener();
     }
 }

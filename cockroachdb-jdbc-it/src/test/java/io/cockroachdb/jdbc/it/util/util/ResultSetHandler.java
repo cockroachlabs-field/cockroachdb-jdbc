@@ -1,4 +1,4 @@
-package io.cockroachdb.jdbc.it.util;
+package io.cockroachdb.jdbc.it.util.util;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;

@@ -6,13 +6,12 @@ import java.util.concurrent.Future;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Order;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import io.cockroachdb.jdbc.CockroachConnection;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.JdbcTestUtils;
+import io.cockroachdb.jdbc.it.util.util.JdbcHelper;
 import io.cockroachdb.jdbc.retry.ConcurrentUpdateException;
 
 /**
@@ -24,7 +23,6 @@ import io.cockroachdb.jdbc.retry.ConcurrentUpdateException;
  * Based on Martin Kleppman's Hermitage (https://github.com/ept/hermitage).
  */
 @DatabaseFixture(beforeTestScript = "db/anomaly/hermitage-ddl.sql")
-@Tag("hermitage-test")
 public class HermitageTest extends AbstractAnomalyTest {
     private Connection openConnection() throws SQLException {
         Connection c = dataSource.getConnection();
@@ -38,7 +36,7 @@ public class HermitageTest extends AbstractAnomalyTest {
      */
     private void waitForMaxOffset(Connection c) {
         try {
-            JdbcTestUtils.execute(c, "show database");
+            JdbcHelper.execute(c, "show database");
             Thread.sleep(MAX_OFFSET_MILLIS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -56,16 +54,16 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t2 = openConnection();
         Assertions.assertNotSame(t1, t2);
 
-        JdbcTestUtils.update(t1, "update test set value=11 where id=1");
+        JdbcHelper.update(t1, "update test set value=11 where id=1");
 
         // Blocks on t1
-        Future<Integer> f2 = boundedThreadPool.submitAndWait(
-                () -> JdbcTestUtils.update(t2, "update test set value=12 where id=1"),
+        Future<Integer> f2 = threadPool.submitAndWait(
+                () -> JdbcHelper.update(t2, "update test set value=12 where id=1"),
                 MAX_OFFSET_MILLIS);
 
-        JdbcTestUtils.update(t1, "update test set value=21 where id=2");
+        JdbcHelper.update(t1, "update test set value=21 where id=2");
 
-        JdbcTestUtils.select(t1, "select * from test", rs -> {
+        JdbcHelper.select(t1, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(11, rs.getInt(2));
@@ -79,10 +77,10 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         Assertions.assertEquals(1, awaitFuture(f2));
 
-        JdbcTestUtils.update(t2, "update test set value=22 where id=2");
+        JdbcHelper.update(t2, "update test set value=22 where id=2");
         t2.commit();
 
-        JdbcTestUtils.select(t1, "select * from test", rs -> {
+        JdbcHelper.select(t1, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(12, rs.getInt(2));
@@ -106,9 +104,9 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         waitForMaxOffset(t2);
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value=101 where id=1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value=101 where id=1"));
 
-        JdbcTestUtils.select(t2, "select * from test", rs -> {
+        JdbcHelper.select(t2, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -120,7 +118,7 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t1.rollback();
 
-        JdbcTestUtils.select(t2, "select * from test", rs -> {
+        JdbcHelper.select(t2, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -146,9 +144,9 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         waitForMaxOffset(t2);
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value=101 where id=1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value=101 where id=1"));
 
-        JdbcTestUtils.select(t2, "select id,value from test", rs -> {
+        JdbcHelper.select(t2, "select id,value from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -158,10 +156,10 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertFalse(rs.next());
         });
 
-        JdbcTestUtils.update(t1, "update test set value=11 where id=1");
+        JdbcHelper.update(t1, "update test set value=11 where id=1");
         t1.commit();
 
-        JdbcTestUtils.select(t2, "select * from test", rs -> {
+        JdbcHelper.select(t2, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -186,10 +184,10 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         waitForMaxOffset(t2);
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value=11 where id=1"));
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value=22 where id=2"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value=11 where id=1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value=22 where id=2"));
 
-        boundedThreadPool.submitAfterDelay(() -> {
+        threadPool.submitAfterDelay(() -> {
             t1.commit();
             t1.close();
             return null;
@@ -199,7 +197,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         t2.close();
 
         Connection t3 = openConnection();
-        JdbcTestUtils.select(t3, "select * from test where id=2", rs -> {
+        JdbcHelper.select(t3, "select * from test where id=2", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(2, rs.getInt(1));
             Assertions.assertEquals(22, rs.getInt(2));
@@ -210,7 +208,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         t3.close();
 
         Connection t4 = openConnection();
-        JdbcTestUtils.select(t4, "select * from test where id=1", rs -> {
+        JdbcHelper.select(t4, "select * from test where id=1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(11, rs.getInt(2));
@@ -232,25 +230,25 @@ public class HermitageTest extends AbstractAnomalyTest {
         waitForMaxOffset(t2);
         waitForMaxOffset(t3);
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value=11 where id=1"));
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value=19 where id=2"));
-        Future<?> f1 = boundedThreadPool.submitAndWait(
-                () -> JdbcTestUtils.update(t2, "update test set value=12 where id=1"),
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value=11 where id=1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value=19 where id=2"));
+        Future<?> f1 = threadPool.submitAndWait(
+                () -> JdbcHelper.update(t2, "update test set value=12 where id=1"),
                 MAX_OFFSET_MILLIS);
 
         t1.commit();
 
         awaitFuture(f1);
 
-        JdbcTestUtils.select(t3, "select * from test where id=1", rs -> {
+        JdbcHelper.select(t3, "select * from test where id=1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
         });
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value=18 where id=2"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value=18 where id=2"));
 
-        JdbcTestUtils.select(t3, "select * from test where id=2", rs -> {
+        JdbcHelper.select(t3, "select * from test where id=2", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(2, rs.getInt(1));
             Assertions.assertEquals(20, rs.getInt(2));
@@ -258,12 +256,12 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t2.commit();
 
-        JdbcTestUtils.select(t3, "select * from test where id=2", rs -> {
+        JdbcHelper.select(t3, "select * from test where id=2", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(2, rs.getInt(1));
             Assertions.assertEquals(20, rs.getInt(2));
         });
-        JdbcTestUtils.select(t3, "select * from test where id=1", rs -> {
+        JdbcHelper.select(t3, "select * from test where id=1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -282,15 +280,15 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where value=30", rs -> {
+        JdbcHelper.select(t1, "select * from test where value=30", rs -> {
             Assertions.assertFalse(rs.next());
         });
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "insert into test (id, value) values(3, 30)"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "insert into test (id, value) values(3, 30)"));
 
         t2.commit();
 
-        JdbcTestUtils.select(t1, "select * from test where value % 3 = 0", rs -> {
+        JdbcHelper.select(t1, "select * from test where value % 3 = 0", rs -> {
             Assertions.assertFalse(rs.next());
         });
 
@@ -307,10 +305,10 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        Assertions.assertEquals(2, JdbcTestUtils.update(t1, "update test set value = value + 10 where true"));
+        Assertions.assertEquals(2, JdbcHelper.update(t1, "update test set value = value + 10 where true"));
 
-        Future<?> f1 = boundedThreadPool.submitAndWait(
-                () -> JdbcTestUtils.update(t2, "delete from test where value = 20"),
+        Future<?> f1 = threadPool.submitAndWait(
+                () -> JdbcHelper.update(t2, "delete from test where value = 20"),
                 MAX_OFFSET_MILLIS);
 
         t1.commit();
@@ -330,21 +328,21 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where id=1", rs -> {
+        JdbcHelper.select(t1, "select * from test where id=1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
         });
-        JdbcTestUtils.select(t1, "select * from test where id=2", rs -> {
+        JdbcHelper.select(t1, "select * from test where id=2", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(2, rs.getInt(1));
             Assertions.assertEquals(20, rs.getInt(2));
         });
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value = 11 where id = 1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value = 11 where id = 1"));
 
-        Future<?> f1 = boundedThreadPool.submitAndWait(
-                () -> JdbcTestUtils.update(t2, "update test set value = 11 where id = 1"),
+        Future<?> f1 = threadPool.submitAndWait(
+                () -> JdbcHelper.update(t2, "update test set value = 11 where id = 1"),
                 MAX_OFFSET_MILLIS);
 
         t1.commit();
@@ -364,28 +362,28 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where id=1", rs -> {
+        JdbcHelper.select(t1, "select * from test where id=1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
         });
-        JdbcTestUtils.select(t2, "select * from test where id=1", rs -> {
+        JdbcHelper.select(t2, "select * from test where id=1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
         });
-        JdbcTestUtils.select(t2, "select * from test where id=2", rs -> {
+        JdbcHelper.select(t2, "select * from test where id=2", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(2, rs.getInt(1));
             Assertions.assertEquals(20, rs.getInt(2));
         });
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value = 12 where id = 1"));
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value = 18 where id = 2"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value = 12 where id = 1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value = 18 where id = 2"));
 
         t2.commit();
 
-        JdbcTestUtils.select(t1, "select * from test where id=2", rs -> {
+        JdbcHelper.select(t1, "select * from test where id=2", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(2, rs.getInt(1));
             Assertions.assertEquals(20, rs.getInt(2));
@@ -402,7 +400,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where value % 5 = 0", rs -> {
+        JdbcHelper.select(t1, "select * from test where value % 5 = 0", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -411,11 +409,11 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertEquals(20, rs.getInt(2));
             Assertions.assertFalse(rs.next());
         });
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value = 12 where value = 10"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value = 12 where value = 10"));
 
         t2.commit();
 
-        JdbcTestUtils.select(t1, "select * from test where value % 3 = 0", rs -> {
+        JdbcHelper.select(t1, "select * from test where value % 3 = 0", rs -> {
             Assertions.assertFalse(rs.next());
         });
 
@@ -432,22 +430,22 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where id = 1", rs -> {
+        JdbcHelper.select(t1, "select * from test where id = 1", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
             Assertions.assertFalse(rs.next());
         });
-        JdbcTestUtils.select(t2, "select * from test", rs -> {
+        JdbcHelper.select(t2, "select * from test", rs -> {
 
         });
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value = 12 where id = 1"));
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value = 18 where id = 2"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value = 12 where id = 1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value = 18 where id = 2"));
 
         t2.commit();
 
         Assertions.assertThrows(
-                SQLException.class, () -> JdbcTestUtils.update(t1, "delete from test where value = 20"));
+                SQLException.class, () -> JdbcHelper.update(t1, "delete from test where value = 20"));
 
         t1.rollback();
 
@@ -462,7 +460,7 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where id in (1,2)", rs -> {
+        JdbcHelper.select(t1, "select * from test where id in (1,2)", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -472,7 +470,7 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertFalse(rs.next());
         });
 
-        JdbcTestUtils.select(t2, "select * from test where id in (1,2)", rs -> {
+        JdbcHelper.select(t2, "select * from test where id in (1,2)", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -482,7 +480,7 @@ public class HermitageTest extends AbstractAnomalyTest {
             Assertions.assertFalse(rs.next());
         });
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value = 11 where id = 1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value = 11 where id = 1"));
 
         t1.commit();
         t1.close();
@@ -490,14 +488,14 @@ public class HermitageTest extends AbstractAnomalyTest {
         Assertions.assertThrows(
                 ConcurrentUpdateException.class,
                 () -> {
-                    JdbcTestUtils.update(t2, "update test set value = 22 where id = 2");
+                    JdbcHelper.update(t2, "update test set value = 22 where id = 2");
                     t2.commit();
                 });
 
         t2.close();
 
         Connection t3 = openConnection();
-        JdbcTestUtils.select(t3, "select * from test where id in (1,2)", rs -> {
+        JdbcHelper.select(t3, "select * from test where id in (1,2)", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(11, rs.getInt(2));
@@ -517,18 +515,18 @@ public class HermitageTest extends AbstractAnomalyTest {
         Connection t1 = openConnection();
         Connection t2 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test where value % 3 = 0", rs -> {
+        JdbcHelper.select(t1, "select * from test where value % 3 = 0", rs -> {
             Assertions.assertFalse(rs.next());
         });
 
-        JdbcTestUtils.select(t2, "select * from test where value % 3 = 0", rs -> {
+        JdbcHelper.select(t2, "select * from test where value % 3 = 0", rs -> {
             Assertions.assertFalse(rs.next());
         });
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "insert into test (id, value) values(3, 30)"));
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "insert into test (id, value) values(4, 42)"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "insert into test (id, value) values(3, 30)"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "insert into test (id, value) values(4, 42)"));
 
-        boundedThreadPool.submitAfterDelay(() -> {
+        threadPool.submitAfterDelay(() -> {
             Assertions.assertThrows(
                     SQLException.class, () -> t1.commit());
             return null;
@@ -546,7 +544,7 @@ public class HermitageTest extends AbstractAnomalyTest {
     public void given1SR_prevent_G2_Anti_Dependency_Cycles_With_Two_Anti_Dependency_Edges() throws SQLException {
         Connection t1 = openConnection();
 
-        JdbcTestUtils.select(t1, "select * from test", rs -> {
+        JdbcHelper.select(t1, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -558,13 +556,13 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         Connection t2 = openConnection();
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t2, "update test set value = value + 5 where id = 2"));
+        Assertions.assertEquals(1, JdbcHelper.update(t2, "update test set value = value + 5 where id = 2"));
 
         t2.commit();
 
         Connection t3 = openConnection();
 
-        JdbcTestUtils.select(t3, "select * from test", rs -> {
+        JdbcHelper.select(t3, "select * from test", rs -> {
             Assertions.assertTrue(rs.next());
             Assertions.assertEquals(1, rs.getInt(1));
             Assertions.assertEquals(10, rs.getInt(2));
@@ -576,7 +574,7 @@ public class HermitageTest extends AbstractAnomalyTest {
 
         t3.commit();
 
-        Assertions.assertEquals(1, JdbcTestUtils.update(t1, "update test set value = 0 where id = 1"));
+        Assertions.assertEquals(1, JdbcHelper.update(t1, "update test set value = 0 where id = 1"));
 
         Assertions.assertThrows(
                 SQLException.class, () -> t1.commit());

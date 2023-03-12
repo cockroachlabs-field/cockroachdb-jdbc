@@ -31,13 +31,11 @@ public class ResultSetRetryInterceptor extends AbstractRetryInterceptor<ResultSe
 
     private final Checksum firstChecksum = Checksum.sha256();
 
-    protected ResultSetRetryInterceptor(ResultSet delegate, ConnectionRetryInterceptor connectionRetryInterceptor) {
+    protected ResultSetRetryInterceptor(ResultSet delegate,
+                                        ConnectionRetryInterceptor connectionRetryInterceptor) {
         super(delegate);
-
         this.connectionRetryInterceptor = connectionRetryInterceptor;
-
-        setMethodTraceLogger(MethodTraceLogger.createInstance(logger)
-                .setMasked(connectionRetryInterceptor.getConnectionSettings().isMaskSQLTrace()));
+        setMethodTraceLogger(connectionRetryInterceptor.getConnectionSettings().getMethodTraceLogger());
     }
 
     @Override
@@ -90,7 +88,8 @@ public class ResultSetRetryInterceptor extends AbstractRetryInterceptor<ResultSe
         byte[] lastDigest = lastChecksum.toDigest();
 
         if (!Arrays.equals(firstDigest, lastDigest)) {
-            throw new ConcurrentUpdateException("The transaction could not serialize due to a concurrent update (checksum failure)");
+            throw new ConcurrentUpdateException(
+                    "The transaction could not serialize due to a concurrent update (checksum failure)");
         }
     }
 
@@ -165,7 +164,7 @@ public class ResultSetRetryInterceptor extends AbstractRetryInterceptor<ResultSe
         } else if (obj instanceof ResultSetMetaData) {
             // Ignore
         } else if (obj instanceof UUID) {
-            checksum.update(((UUID) obj).toString().getBytes(StandardCharsets.UTF_8));
+            checksum.update(obj.toString().getBytes(StandardCharsets.UTF_8));
         } else if (obj != null) {
             // Unsupported type - use non-deterministic value to force checksum failure on retry
             checksum.update(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));

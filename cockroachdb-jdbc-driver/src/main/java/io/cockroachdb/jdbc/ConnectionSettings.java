@@ -1,5 +1,7 @@
 package io.cockroachdb.jdbc;
 
+import java.util.Optional;
+
 import io.cockroachdb.jdbc.query.QueryProcessor;
 import io.cockroachdb.jdbc.retry.MethodTraceLogger;
 import io.cockroachdb.jdbc.retry.RetryListener;
@@ -11,8 +13,6 @@ import io.cockroachdb.jdbc.retry.RetryStrategy;
 @SuppressWarnings("UnusedReturnValue")
 public class ConnectionSettings {
     private boolean useCockroachMetadata;
-
-    private boolean maskSQLTrace;
 
     private QueryProcessor queryProcessor;
 
@@ -30,14 +30,6 @@ public class ConnectionSettings {
         this.methodTraceLogger = methodTraceLogger;
     }
 
-    public boolean isMaskSQLTrace() {
-        return maskSQLTrace;
-    }
-
-    public void setMaskSQLTrace(boolean maskSQLTrace) {
-        this.maskSQLTrace = maskSQLTrace;
-    }
-
     public boolean isUseCockroachMetadata() {
         return useCockroachMetadata;
     }
@@ -48,7 +40,7 @@ public class ConnectionSettings {
     }
 
     public QueryProcessor getQueryProcessor() {
-        return queryProcessor;
+        return Optional.of(queryProcessor).get(); // NPE here if not set
     }
 
     public ConnectionSettings setQueryProcessor(QueryProcessor queryProcessor) {
@@ -57,7 +49,7 @@ public class ConnectionSettings {
     }
 
     public RetryStrategy getRetryStrategy() {
-        return retryStrategy;
+        return Optional.of(retryStrategy).get(); // NPE here if not set
     }
 
     public ConnectionSettings setRetryStrategy(RetryStrategy retryStrategy) {
@@ -66,7 +58,7 @@ public class ConnectionSettings {
     }
 
     public RetryListener getRetryListener() {
-        return retryListener;
+        return Optional.of(retryListener).get(); // NPE here if not set
     }
 
     public ConnectionSettings setRetryListener(RetryListener retryListener) {

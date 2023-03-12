@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import io.cockroachdb.jdbc.CockroachConnection;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.TextUtils;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 import io.cockroachdb.jdbc.retry.ConcurrentUpdateException;
 import io.cockroachdb.jdbc.retry.LoggingRetryListener;
 
@@ -33,7 +33,7 @@ public class WriteSkewSimpleTest extends AbstractAnomalyTest {
 
         CountDownLatch countDownLatch = new CountDownLatch(1);
 
-        Future<BigDecimal> f1 = boundedThreadPool.submit(() -> {
+        Future<BigDecimal> f1 = threadPool.submit(() -> {
             BigDecimal result;
             try (Connection t1 = dataSource.getConnection()) {
                 if (t1.isWrapperFor(CockroachConnection.class)) {
@@ -48,7 +48,7 @@ public class WriteSkewSimpleTest extends AbstractAnomalyTest {
             return result;
         });
 
-        Future<BigDecimal> f2 = boundedThreadPool.submit(() -> {
+        Future<BigDecimal> f2 = threadPool.submit(() -> {
             BigDecimal result;
             try (Connection t2 = dataSource.getConnection()) {
                 if (t2.isWrapperFor(CockroachConnection.class)) {
@@ -78,10 +78,11 @@ public class WriteSkewSimpleTest extends AbstractAnomalyTest {
             Assertions.assertEquals(expected, readBalance(c, who));
         }
 
-        logger.info(TextUtils.successRate("Retries",
-                LoggingRetryListener.getSuccessfulRetries(),
-                LoggingRetryListener.getFailedRetries()));
-        logger.info(TextUtils.shrug());
+        logger.info("Retries: {}", PrettyText.rate(
+                "success",
+                singletonRetryListener.getTotalSuccessfulRetries(),
+                "fail",
+                singletonRetryListener.getTotalFailedRetries()));
     }
 
     private BigDecimal withdrawFunds(Connection connection, String who, String accountType, BigDecimal amount)

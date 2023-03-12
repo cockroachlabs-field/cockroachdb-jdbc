@@ -12,7 +12,7 @@ import org.mockito.Mockito;
 import io.cockroachdb.jdbc.ConnectionSettings;
 
 @Tag("unit-test")
-public class PreparedStatementRetryProxyTest {
+public class PreparedStatementRetryInterceptorTest {
     @Test
     public void whenProxyingPreparedStatementMethods_expectPassThroughToDelegate() throws SQLException {
         PreparedStatement preparedStatementMock = Mockito.mock(PreparedStatement.class);
@@ -20,7 +20,8 @@ public class PreparedStatementRetryProxyTest {
         Mockito.when(connectionRetryInterceptorMock.getConnectionSettings())
                 .thenReturn(new ConnectionSettings());
 
-        PreparedStatement proxy = PreparedStatementRetryInterceptor.proxy(preparedStatementMock, connectionRetryInterceptorMock);
+        PreparedStatement proxy = PreparedStatementRetryInterceptor.proxy(preparedStatementMock,
+                connectionRetryInterceptorMock);
 
         proxy.executeUpdate();
         proxy.executeQuery();
@@ -40,7 +41,8 @@ public class PreparedStatementRetryProxyTest {
 
         ConnectionSettings settings = new ConnectionSettings();
         settings.setRetryStrategy(strategy);
-        settings.setRetryListener(properties -> {});
+        settings.setRetryListener(properties -> {
+        });
 
         Connection retryConnectionMock = Mockito.mock(Connection.class);
         Mockito.when(retryConnectionMock.isValid(Mockito.anyInt())).thenReturn(true);
@@ -56,7 +58,7 @@ public class PreparedStatementRetryProxyTest {
 
         PreparedStatement proxy = PreparedStatementRetryInterceptor.proxy(preparedStatementMock, retryProxyStub);
 
-        Assertions.assertThrows(SurrenderRetryException.class, () -> proxy.executeUpdate());
+        Assertions.assertThrows(TooManyRetriesException.class, () -> proxy.executeUpdate());
 
         Mockito.verify(preparedStatementMock, Mockito.times(retrys + 1)).executeUpdate();
     }

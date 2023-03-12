@@ -14,6 +14,11 @@ import io.cockroachdb.jdbc.util.Assert;
  * A query processor that appends {@code FOR UPDATE} to SELECT queries when qualified.
  */
 public class SelectForUpdateProcessor implements QueryProcessor {
+    /**
+     * Singleton instance of this processor.
+     */
+    public static final SelectForUpdateProcessor INSTANCE = new SelectForUpdateProcessor();
+
     private static final Set<String> AGGREGATE_FUNCTIONS = new HashSet<>(Arrays.asList(
             "array_agg",
             "avg",
@@ -90,8 +95,10 @@ public class SelectForUpdateProcessor implements QueryProcessor {
             } else {
                 query = query + " FOR UPDATE";
             }
+            return query;
+        } else {
+            return query;
         }
-        return query;
     }
 
     protected boolean hasAggregateFunction(String query) {
@@ -129,5 +136,10 @@ public class SelectForUpdateProcessor implements QueryProcessor {
                 || query.contains("information_schema.")
                 || query.contains("pg_catalog.")
                 || query.contains("pg_extension.");
+    }
+
+    @Override
+    public boolean isTransactionScoped() {
+        return false;
     }
 }

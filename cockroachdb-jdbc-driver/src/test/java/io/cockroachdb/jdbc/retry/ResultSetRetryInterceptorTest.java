@@ -14,7 +14,7 @@ import org.mockito.Mockito;
 import io.cockroachdb.jdbc.ConnectionSettings;
 
 @Tag("unit-test")
-public class ResultSetRetryProxyTest {
+public class ResultSetRetryInterceptorTest {
     @Test
     public void whenProxyingResultSetMethods_expectPassThroughToDelegate() throws SQLException {
         ResultSet preparedStatementMock = Mockito.mock(ResultSet.class);
@@ -40,7 +40,8 @@ public class ResultSetRetryProxyTest {
 
         ConnectionSettings settings = new ConnectionSettings();
         settings.setRetryStrategy(strategy);
-        settings.setRetryListener(properties -> {});
+        settings.setRetryListener(properties -> {
+        });
 
         ResultSet resultSetMock = Mockito.mock(ResultSet.class);
         Mockito.when(resultSetMock.next())
@@ -57,9 +58,10 @@ public class ResultSetRetryProxyTest {
         Mockito.when(connectionMock.isValid(Mockito.anyInt())).thenReturn(true);
         Mockito.when(connectionMock.prepareStatement(Mockito.anyString())).thenReturn(preparedStatementMock);
 
-        ConnectionRetryInterceptor connectionRetryProxy = new ConnectionRetryInterceptor(connectionMock, settings, () -> {
-            return connectionMock;
-        });
+        ConnectionRetryInterceptor connectionRetryProxy = new ConnectionRetryInterceptor(connectionMock, settings,
+                () -> {
+                    return connectionMock;
+                });
 
         Connection connectionProxy = (Connection) Proxy.newProxyInstance(
                 ConnectionRetryInterceptor.class.getClassLoader(),

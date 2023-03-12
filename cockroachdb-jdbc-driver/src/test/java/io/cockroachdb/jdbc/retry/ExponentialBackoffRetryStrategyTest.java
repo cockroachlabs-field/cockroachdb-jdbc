@@ -2,7 +2,6 @@ package io.cockroachdb.jdbc.retry;
 
 import java.sql.SQLException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Properties;
 import java.util.stream.IntStream;
 
@@ -63,12 +62,8 @@ public class ExponentialBackoffRetryStrategyTest {
         RetryStrategy strategy = new ExponentialBackoffRetryStrategy();
         strategy.configure(props);
 
-        Assertions.assertTrue(strategy.proceedWithRetry(1, Instant.now()));
-        Assertions.assertTrue(strategy.proceedWithRetry(2, Instant.now()));
-        Assertions.assertTrue(strategy.proceedWithRetry(3, Instant.now()));
-        Assertions.assertFalse(strategy.proceedWithRetry(4, Instant.now()));
-
-        Assertions.assertTrue(strategy.proceedWithRetry(1, Instant.now().minus(Duration.ofSeconds(4))));
-        Assertions.assertTrue(strategy.proceedWithRetry(1, Instant.now().minus(Duration.ofSeconds(6))));
+        Assertions.assertFalse(strategy.getBackoffDuration(1).isZero());
+        Assertions.assertFalse(strategy.getBackoffDuration(2).isZero());
+        Assertions.assertFalse(strategy.getBackoffDuration(3).isZero());
     }
 }

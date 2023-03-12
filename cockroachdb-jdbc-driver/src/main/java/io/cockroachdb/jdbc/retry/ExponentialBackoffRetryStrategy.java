@@ -2,10 +2,8 @@ package io.cockroachdb.jdbc.retry;
 
 import java.sql.SQLException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Properties;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 
 import org.postgresql.util.PSQLState;
 
@@ -95,19 +93,13 @@ public class ExponentialBackoffRetryStrategy implements RetryStrategy {
     }
 
     @Override
-    public boolean proceedWithRetry(int attempt, Instant startTime) {
+    public boolean proceedWithRetry(int attempt) {
         return attempt <= maxAttempts;
     }
 
     @Override
-    public void waitBeforeRetry(int attempt, Instant startTime, Consumer<Duration> callback) {
-        try {
-            Duration interval = backoffInterval(attempt);
-            callback.accept(interval);
-            Thread.sleep(interval.toMillis());
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-        }
+    public Duration getBackoffDuration(int attempt) {
+        return backoffInterval(attempt);
     }
 
     /**

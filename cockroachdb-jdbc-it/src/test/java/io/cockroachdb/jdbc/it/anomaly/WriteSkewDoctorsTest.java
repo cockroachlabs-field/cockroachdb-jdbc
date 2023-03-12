@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import io.cockroachdb.jdbc.CockroachConnection;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.TextUtils;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 import io.cockroachdb.jdbc.retry.LoggingRetryListener;
 
 @DatabaseFixture(beforeTestScript = "db/anomaly/doctors-ddl.sql")
@@ -26,7 +26,7 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
         CountDownLatch latch = new CountDownLatch(1);
 
         // Transaction T1
-        Future<Integer> t1 = boundedThreadPool.submit(() -> {
+        Future<Integer> t1 = threadPool.submit(() -> {
             try (Connection connection = dataSource.getConnection()) {
                 connection.setAutoCommit(false);
                 latch.await();
@@ -37,7 +37,7 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
         });
 
         // Transaction T2
-        Future<Integer> t2 = boundedThreadPool.submit(() -> {
+        Future<Integer> t2 = threadPool.submit(() -> {
             try (Connection connection = dataSource.getConnection()) {
                 connection.setAutoCommit(false);
                 latch.await();
@@ -74,7 +74,7 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
         LoggingRetryListener retryListener = new LoggingRetryListener();
 
         IntStream.rangeClosed(1, numThreads).forEach(value -> {
-            Future<Integer> f = boundedThreadPool.submit(() -> {
+            Future<Integer> f = threadPool.submit(() -> {
                 try (Connection connection = dataSource.getConnection()) {
                     if (connection.isWrapperFor(CockroachConnection.class)) {
                         connection.unwrap(CockroachConnection.class).getConnectionSettings()
@@ -92,7 +92,7 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
 
         Assertions.assertEquals(numThreads, futures.size());
 
-        int success = 0;
+        int commits = 0;
         List<Throwable> errors = new ArrayList<>();
 
         while (!futures.isEmpty()) {
@@ -100,7 +100,7 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
             try {
                 f.get();
                 Assertions.assertTrue(f.get() >= 1);
-                success++;
+                commits++;
             } catch (ExecutionException e) {
                 errors.add(e.getCause());
             }
@@ -111,25 +111,21 @@ public class WriteSkewDoctorsTest extends AbstractAnomalyTest {
             Assertions.assertTrue(getOnCallCount(connection, 1234) >= 1);
         }
 
-        final int failures = errors.size();
+        final int rollbacks = errors.size();
 
         logger.info("Listing top-5 of {} errors:", errors.size());
         errors.stream().limit(5).forEach(throwable -> {
             logger.warn(throwable.toString());
         });
 
-        logger.info(TextUtils.successRate("Operations",
-                success,
-                failures));
-        logger.info(TextUtils.successRate("Retries",
-                LoggingRetryListener.getSuccessfulRetries(),
-                LoggingRetryListener.getFailedRetries()));
-
-        if (failures > 0) {
-            logger.info(TextUtils.flipTableGently());
-        } else {
-            logger.info(TextUtils.shrug());
-        }
+        logger.info("Transactions: {}",
+                PrettyText.rate("commit", commits, "rollback", rollbacks));
+        logger.info("Retries: {}", PrettyText.rate(
+                "success",
+                singletonRetryListener.getTotalSuccessfulRetries(),
+                "fail",
+                singletonRetryListener.getTotalFailedRetries()));
+        logger.info(rollbacks > 0 ? PrettyText.flipTableGently() : PrettyText.shrug());
     }
 
     /**

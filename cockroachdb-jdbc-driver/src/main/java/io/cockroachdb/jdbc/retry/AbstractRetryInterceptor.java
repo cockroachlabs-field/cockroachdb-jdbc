@@ -27,7 +27,7 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
         methodExecutions.add(methodExecution);
     }
 
-    protected void clearHistory() {
+    protected final void clearHistory() {
         methodExecutions.clear();
     }
 
@@ -39,14 +39,18 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
         Throwable ex = null;
         Object result = null;
 
+        long no = 0;
         try {
+            if (methodTraceLogger != null) {
+                no = methodTraceLogger.before(connectionInfo(), getDelegate(), method, args);
+            }
             result = proceed(method, args);
         } catch (Throwable e) {
             ex = e;
         } finally {
             executionTime = Duration.between(callTime, Instant.now());
             if (methodTraceLogger != null) {
-                methodTraceLogger.log(ex, executionTime, connectionInfo(), getDelegate(), method, args);
+                methodTraceLogger.after(no, connectionInfo(), getDelegate(), method, args, executionTime, ex);
             }
         }
 
@@ -67,15 +71,19 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
         Instant callTime = Instant.now();
         Throwable ex = null;
 
+        long no = 0;
         try {
+            if (methodTraceLogger != null) {
+                no = methodTraceLogger.before(connectionInfo(), getDelegate(), method, args);
+            }
             return proceed(method, args);
         } catch (Throwable e) {
             ex = e;
             throw e;
         } finally {
             if (methodTraceLogger != null) {
-                methodTraceLogger.log(ex, Duration.between(callTime, Instant.now()), connectionInfo(),
-                        getDelegate(), method, args);
+                methodTraceLogger.after(no, connectionInfo(),
+                        getDelegate(), method, args, Duration.between(callTime, Instant.now()), ex);
             }
         }
     }
@@ -83,12 +91,13 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
     protected final void retry(T delegate) throws Throwable {
         setDelegate(delegate);
         if (logger.isDebugEnabled()) {
-            logMethodExecutions();
+            logger.debug("Repeating [{}] method executions for delegate [{}]: {}",
+                    methodExecutions.size(), getDelegate().toString(), toStringCallstack());
         }
         doRetry(Collections.unmodifiableList(methodExecutions));
     }
 
-    private void logMethodExecutions() {
+    protected String toStringCallstack() {
         StringBuilder results = new StringBuilder();
         int methodCount = 0;
 
@@ -98,15 +107,13 @@ public abstract class AbstractRetryInterceptor<T> extends AbstractInterceptor<T>
             results.append("] ");
             results.append(methodExecution.getMethod().toGenericString());
             methodCount++;
-            if (methodCount > 30) {
-                results.append("\n\t(truncated at 30 but there are ")
-                        .append(methodExecutions.size()).append(" methods in total)");
+            if (methodCount > 5) {
+                results.append("\n\t(truncated at 5 but there are ")
+                        .append(methodExecutions.size()).append(" methods queued in total)");
                 break;
             }
         }
-
-        logger.debug("Repeating [{}] method executions for delegate [{}]: {}",
-                methodCount, getDelegate().toString(), results);
+        return results.toString();
     }
 
     protected abstract String connectionInfo();

@@ -31,14 +31,42 @@ public class MethodTraceLogger {
         return this;
     }
 
-    public void log(Throwable throwable, Duration callDuration, String connectionId,
-                    Object target, Method method, Object[] args) {
+    public long before(String connectionId, Object target, Method method, Object[] args) {
+        if (!logger.isTraceEnabled()) {
+            return 0;
+        }
+        long no = sequenceNumber.incrementAndGet();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(">> before [");
+        sb.append(no);
+        sb.append("]");
+
+        sb.append("[conn=");
+        sb.append(connectionId);
+        sb.append("]");
+
+        sb.append(" ");
+        sb.append(target.getClass().getName());
+        sb.append("#");
+        sb.append(method.getName());
+        sb.append("(");
+        sb.append(TraceUtils.methodArgsToString(args, masked));
+        sb.append(")");
+
+        logger.trace(sb.toString());
+
+        return no;
+    }
+
+    public void after(long no, String connectionId,
+                      Object target, Method method, Object[] args, Duration callDuration, Throwable throwable) {
         if (!logger.isTraceEnabled()) {
             return;
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("[");
-        sb.append(sequenceNumber.incrementAndGet());
+        sb.append("<< after [");
+        sb.append(no);
         sb.append("]");
 
         sb.append("[");

@@ -1,4 +1,4 @@
-package io.cockroachdb.jdbc.it.util;
+package io.cockroachdb.jdbc.it.util.util;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 
 import javax.sql.DataSource;
 
-public abstract class JdbcTestUtils {
+public abstract class JdbcHelper {
     public static <T> Stream<List<T>> chunkedStream(Stream<T> stream, int chunkSize) {
         AtomicInteger idx = new AtomicInteger();
         return stream.collect(Collectors.groupingBy(x -> idx.getAndIncrement() / chunkSize))
@@ -52,6 +52,6 @@ public abstract class JdbcTestUtils {
         }
     }
 
-    private JdbcTestUtils() {
+    private JdbcHelper() {
     }
 }

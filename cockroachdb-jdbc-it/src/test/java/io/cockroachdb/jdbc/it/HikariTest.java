@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import com.zaxxer.hikari.HikariDataSource;
 
-import io.cockroachdb.jdbc.it.util.TextUtils;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 
 @Disabled
 public class HikariTest extends AbstractIntegrationTest {
@@ -58,32 +58,28 @@ public class HikariTest extends AbstractIntegrationTest {
 
         Assertions.assertEquals(numThreads, futures.size());
 
-        int success = 0;
+        int commits = 0;
         List<Throwable> errors = new ArrayList<>();
 
         while (!futures.isEmpty()) {
             Future<Integer> f = futures.remove(0);
             try {
                 f.get();
-                success++;
+                commits++;
             } catch (ExecutionException e) {
                 errors.add(e.getCause());
             }
         }
 
-        final int failures = errors.size();
+        final int rollbacks = errors.size();
 
         logger.info("Listing top-5 of {} errors:", errors.size());
         errors.stream().limit(5).forEach(throwable -> {
             logger.warn(throwable.toString());
         });
 
-        logger.info(TextUtils.successRate("Transactions", success, failures));
-
-        if (failures > 0) {
-            logger.info(TextUtils.flipTableGently());
-        } else {
-            logger.info(TextUtils.shrug());
-        }
+        logger.info("Transactions: {}",
+                PrettyText.rate("commit", commits, "rollback", rollbacks));
+        logger.info(rollbacks > 0 ? PrettyText.flipTableGently() : PrettyText.shrug());
     }
 }

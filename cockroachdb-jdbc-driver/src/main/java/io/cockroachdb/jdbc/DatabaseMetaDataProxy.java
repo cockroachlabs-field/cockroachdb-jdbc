@@ -1,4 +1,4 @@
-package io.cockroachdb.jdbc.meta;
+package io.cockroachdb.jdbc;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -10,7 +10,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
 
-import io.cockroachdb.jdbc.CockroachDriverInfo;
 import io.cockroachdb.jdbc.util.CalendarVersion;
 
 public class DatabaseMetaDataProxy implements InvocationHandler {

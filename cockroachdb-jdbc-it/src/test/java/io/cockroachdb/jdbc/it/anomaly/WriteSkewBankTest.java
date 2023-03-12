@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import io.cockroachdb.jdbc.CockroachConnection;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.TextUtils;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 import io.cockroachdb.jdbc.retry.LoggingRetryListener;
 
 @DatabaseFixture(beforeTestScript = "db/anomaly/bank-ddl.sql")
@@ -27,7 +27,7 @@ public class WriteSkewBankTest extends AbstractAnomalyTest {
         CountDownLatch latch = new CountDownLatch(1);
 
         // Transaction T1
-        Future<BigDecimal> t1 = boundedThreadPool.submit(() -> {
+        Future<BigDecimal> t1 = threadPool.submit(() -> {
             try (Connection connection = dataSource.getConnection()) {
                 connection.setAutoCommit(false);
 
@@ -42,7 +42,7 @@ public class WriteSkewBankTest extends AbstractAnomalyTest {
         });
 
         // Transaction T2
-        Future<BigDecimal> t2 = boundedThreadPool.submit(() -> {
+        Future<BigDecimal> t2 = threadPool.submit(() -> {
             try (Connection connection = dataSource.getConnection()) {
                 connection.setAutoCommit(false);
 
@@ -94,7 +94,7 @@ public class WriteSkewBankTest extends AbstractAnomalyTest {
         LoggingRetryListener retryListener = new LoggingRetryListener();
 
         IntStream.rangeClosed(1, numThreads).forEach(value -> {
-            Future<BigDecimal> f = boundedThreadPool.submit(() -> {
+            Future<BigDecimal> f = threadPool.submit(() -> {
                 try (Connection connection = dataSource.getConnection()) {
                     if (connection.isWrapperFor(CockroachConnection.class)) {
                         connection.unwrap(CockroachConnection.class).getConnectionSettings()
@@ -113,7 +113,7 @@ public class WriteSkewBankTest extends AbstractAnomalyTest {
 
         Assertions.assertEquals(numThreads, futures.size());
 
-        int success = 0;
+        int commits = 0;
         List<Throwable> errors = new ArrayList<>();
 
         while (!futures.isEmpty()) {
@@ -121,7 +121,7 @@ public class WriteSkewBankTest extends AbstractAnomalyTest {
             try {
                 Assertions.assertEquals(1, f.get().compareTo(BigDecimal.ZERO));
                 f.get();
-                success++;
+                commits++;
             } catch (ExecutionException e) {
                 errors.add(e.getCause());
             }
@@ -133,22 +133,21 @@ public class WriteSkewBankTest extends AbstractAnomalyTest {
             Assertions.assertEquals(1, readBalance(connection, "bob").compareTo(BigDecimal.ZERO));
         }
 
-        final int failures = errors.size();
+        final int rollbacks = errors.size();
 
         logger.info("Listing top-5 of {} errors:", errors.size());
         errors.stream().limit(5).forEach(throwable -> {
             logger.warn(throwable.toString());
         });
 
-        logger.info(TextUtils.successRate("Operations", success, failures));
-        logger.info(TextUtils.successRate("Retries",
-                LoggingRetryListener.getSuccessfulRetries(), LoggingRetryListener.getFailedRetries()));
-
-        if (failures > 0) {
-            logger.info(TextUtils.flipTableGently());
-        } else {
-            logger.info(TextUtils.shrug());
-        }
+        logger.info("Transactions: {}",
+                PrettyText.rate("commit", commits, "rollback", rollbacks));
+        logger.info("Retries: {}", PrettyText.rate(
+                "success",
+                singletonRetryListener.getTotalSuccessfulRetries(),
+                "fail",
+                singletonRetryListener.getTotalFailedRetries()));
+        logger.info(rollbacks > 0 ? PrettyText.flipTableGently() : PrettyText.shrug());
     }
 
     private static BigDecimal debitAccount(Connection connection, String name, String type, BigDecimal amount)

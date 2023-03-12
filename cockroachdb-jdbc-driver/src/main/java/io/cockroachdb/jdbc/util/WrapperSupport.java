@@ -22,6 +22,10 @@ public abstract class WrapperSupport<D> implements Wrapper {
         return delegate;
     }
 
+    protected Logger getLogger() {
+        return logger;
+    }
+
     @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
         if (iface.isAssignableFrom(getClass())) {

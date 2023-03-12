@@ -5,8 +5,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.postgresql.util.PSQLState;
 
 import io.cockroachdb.jdbc.query.QueryProcessor;
+import io.cockroachdb.jdbc.query.SelectForUpdateProcessor;
 import io.cockroachdb.jdbc.util.WrapperSupport;
 
 /**
@@ -14,17 +19,20 @@ import io.cockroachdb.jdbc.util.WrapperSupport;
  * or proxy.
  */
 public class CockroachStatement extends WrapperSupport<Statement> implements Statement {
-    private final QueryProcessor queryProcessor;
+    private static final Pattern SET_IMPLICIT_SFU = Pattern.compile(
+            "SET\\s+implicitSelectForUpdate\\s*=\\s*(true|false).*", Pattern.CASE_INSENSITIVE);
 
-    public CockroachStatement(Statement delegate, QueryProcessor queryProcessor) {
+    private final ConnectionSettings connectionSettings;
+
+    public CockroachStatement(Statement delegate, ConnectionSettings connectionSettings) {
         super(delegate);
-        this.queryProcessor = queryProcessor;
+        this.connectionSettings = connectionSettings;
     }
 
     @Override
     public ResultSet executeQuery(String sql) throws SQLException {
-        final String sqlFinal = queryProcessor.processQuery(getConnection(), sql);
-        return new CockroachResultSet(getDelegate().executeQuery(sqlFinal));
+        final String finalQuery = connectionSettings.getQueryProcessor().processQuery(getConnection(), sql);
+        return new CockroachResultSet(getDelegate().executeQuery(finalQuery));
     }
 
     @Override
@@ -94,6 +102,40 @@ public class CockroachStatement extends WrapperSupport<Statement> implements Sta
 
     @Override
     public boolean execute(String sql) throws SQLException {
+        Matcher matcher = SET_IMPLICIT_SFU.matcher(sql);
+        if (matcher.matches()) {
+            if (getConnection().getAutoCommit()) {
+                throw new InvalidConnectionException(
+                        "Implicit select-for-update requires explicit transactions (autoCommit=false)",
+                        PSQLState.TRANSACTION_STATE_INVALID);
+            }
+            boolean onOff = Boolean.parseBoolean(matcher.group(1));
+
+            if (onOff) {
+                connectionSettings.setQueryProcessor(new SelectForUpdateProcessor() {
+                    @Override
+                    public boolean isTransactionScoped() {
+                        return true;
+                    }
+                });
+                getLogger().debug("Enabling implicit select-for-update for connection delegate [{}]", getConnection());
+            } else {
+                connectionSettings.setQueryProcessor(new QueryProcessor() {
+                    @Override
+                    public String processQuery(Connection connection, String query) {
+                        return query;
+                    }
+
+                    @Override
+                    public boolean isTransactionScoped() {
+                        return true;
+                    }
+                });
+                getLogger().debug("Disabling implicit select-for-update for connection delegate [{}]", getConnection());
+            }
+            // Don't pass statement to DB since it's not recognized
+            return true;
+        }
         return getDelegate().execute(sql);
     }
 
@@ -240,7 +282,6 @@ public class CockroachStatement extends WrapperSupport<Statement> implements Sta
 
     @Override
     public void setLargeMaxRows(long max) throws SQLException {
-
         getDelegate().setLargeMaxRows(max);
     }
 

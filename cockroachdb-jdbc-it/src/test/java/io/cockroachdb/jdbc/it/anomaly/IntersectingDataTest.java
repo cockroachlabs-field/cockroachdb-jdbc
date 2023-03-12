@@ -13,10 +13,8 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import io.cockroachdb.jdbc.CockroachConnection;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.TextUtils;
-import io.cockroachdb.jdbc.retry.LoggingRetryListener;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 
 @DatabaseFixture(beforeTestScript = "db/anomaly/intersecting-ddl.sql")
 public class IntersectingDataTest extends AbstractAnomalyTest {
@@ -68,19 +66,13 @@ public class IntersectingDataTest extends AbstractAnomalyTest {
 
         Assertions.assertEquals(4, initialCount);
 
-        LoggingRetryListener retryListener = new LoggingRetryListener();
-
         List<Future<Void>> futureList = new ArrayList<>();
 
         int numWorkers = 10;
 
         IntStream.rangeClosed(1, numWorkers).forEach(value -> {
-            Future<Void> f = boundedThreadPool.submit(() -> {
+            Future<Void> f = threadPool.submit(() -> {
                 try (Connection connection = dataSource.getConnection()) {
-                    if (connection.isWrapperFor(CockroachConnection.class)) {
-                        connection.unwrap(CockroachConnection.class).getConnectionSettings()
-                                .setRetryListener(retryListener);
-                    }
                     connection.setAutoCommit(false);
                     for (int i = 0; i < numWorkers; i++) {
                         readAndWrite(connection, i % 2 == 0 ? 1 : 2, i % 2 == 0 ? 2 : 1);
@@ -92,16 +84,16 @@ public class IntersectingDataTest extends AbstractAnomalyTest {
             futureList.add(f);
         });
 
-        int successfulOps = 0;
-        int failedOps = 0;
+        int commits = 0;
+        int rollbacks = 0;
 
         while (!futureList.isEmpty()) {
             try {
                 futureList.remove(0).get();
-                successfulOps++;
+                commits++;
             } catch (ExecutionException e) {
                 logger.warn("OK: {}", e.getCause().toString());
-                failedOps++;
+                rollbacks++;
             }
         }
 
@@ -110,16 +102,20 @@ public class IntersectingDataTest extends AbstractAnomalyTest {
                     "select count(1) from classroom")) {
                 try (ResultSet rs = select.executeQuery()) {
                     if (rs.next()) {
-                        Assertions.assertEquals(initialCount + successfulOps * numWorkers, rs.getInt(1));
+                        Assertions.assertEquals(initialCount + commits * numWorkers, rs.getInt(1));
                     }
                 }
             }
         }
 
-        logger.info(TextUtils.successRate("Retries",
-                LoggingRetryListener.getSuccessfulRetries(), LoggingRetryListener.getFailedRetries()));
-        logger.info("Successful: {}", successfulOps);
-        logger.info("Failed: {}", failedOps);
+        logger.info("Transactions: {}",
+                PrettyText.rate("commit", commits, "rollback", rollbacks));
+        logger.info("Retries: {}", PrettyText.rate(
+                "success",
+                singletonRetryListener.getTotalSuccessfulRetries(),
+                "fail",
+                singletonRetryListener.getTotalFailedRetries()));
+        logger.info(rollbacks > 0 ? PrettyText.flipTableGently() : PrettyText.shrug());
     }
 }
 

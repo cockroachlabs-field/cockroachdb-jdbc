@@ -19,13 +19,11 @@ public class StatementRetryInterceptor extends AbstractRetryInterceptor<Statemen
 
     private final ConnectionRetryInterceptor connectionRetryInterceptor;
 
-    protected StatementRetryInterceptor(Statement delegate, ConnectionRetryInterceptor connectionRetryInterceptor) {
+    protected StatementRetryInterceptor(Statement delegate,
+                                        ConnectionRetryInterceptor connectionRetryInterceptor) {
         super(delegate);
-
         this.connectionRetryInterceptor = connectionRetryInterceptor;
-
-        setMethodTraceLogger(MethodTraceLogger.createInstance(logger)
-                .setMasked(connectionRetryInterceptor.getConnectionSettings().isMaskSQLTrace()));
+        setMethodTraceLogger(connectionRetryInterceptor.getConnectionSettings().getMethodTraceLogger());
     }
 
     @Override

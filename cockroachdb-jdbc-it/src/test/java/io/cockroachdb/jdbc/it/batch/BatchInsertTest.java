@@ -24,8 +24,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import io.cockroachdb.jdbc.it.AbstractIntegrationTest;
 import io.cockroachdb.jdbc.it.DatabaseFixture;
-import io.cockroachdb.jdbc.it.util.JdbcTestUtils;
-import io.cockroachdb.jdbc.it.util.TextUtils;
+import io.cockroachdb.jdbc.it.util.util.JdbcHelper;
+import io.cockroachdb.jdbc.it.util.util.PrettyText;
 
 @TestClassOrder(ClassOrderer.OrderAnnotation.class)
 @Order(1)
@@ -33,14 +33,6 @@ import io.cockroachdb.jdbc.it.util.TextUtils;
 @DatabaseFixture(beforeTestScript = "db/batch/product-ddl.sql")
 public class BatchInsertTest extends AbstractIntegrationTest {
     private static final int PRODUCTS_PER_BATCH_COUNT = 10_000;
-
-    @Order(0)
-    @ParameterizedTest
-    @ValueSource(ints = {
-            1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10})
-    public void whenStartingTest_thenPrintBatches(int batchSize) throws Exception {
-        logger.info("INSERT {} products using chunks of {}", PRODUCTS_PER_BATCH_COUNT, batchSize);
-    }
 
     @Order(1)
     @ParameterizedTest
@@ -63,7 +55,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
             products.add(product);
         });
 
-        Stream<List<Product>> chunks = JdbcTestUtils.chunkedStream(products.stream(), batchSize);
+        Stream<List<Product>> chunks = JdbcHelper.chunkedStream(products.stream(), batchSize);
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
@@ -74,7 +66,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
 
             chunks.forEach(chunk -> {
                 System.out.printf("%s\n",
-                        TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
+                        PrettyText.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "INSERT INTO product (id,inventory,price,name,sku) values (?,?,?,?,?)")) {
@@ -99,7 +91,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
 
             logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
-                    TextUtils.shrug());
+                    PrettyText.shrug());
         }
     }
 
@@ -124,7 +116,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
             products.add(product);
         });
 
-        Stream<List<Product>> chunks = JdbcTestUtils.chunkedStream(products.stream(), batchSize);
+        Stream<List<Product>> chunks = JdbcHelper.chunkedStream(products.stream(), batchSize);
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
@@ -135,7 +127,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
 
             chunks.forEach(chunk -> {
                 System.out.printf("%s\n",
-                        TextUtils.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
+                        PrettyText.progressBar(totalChunks, n.incrementAndGet(), batchSize + ""));
 
                 try (PreparedStatement ps = connection.prepareStatement(
                         "INSERT INTO product(id,inventory,price,name,sku)"
@@ -172,7 +164,7 @@ public class BatchInsertTest extends AbstractIntegrationTest {
 
             logger.info("Completed in {}\n{}",
                     Duration.between(startTime, Instant.now()),
-                    TextUtils.shrug());
+                    PrettyText.shrug());
         }
     }
 }

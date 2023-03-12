@@ -2,9 +2,7 @@ package io.cockroachdb.jdbc.retry;
 
 import java.sql.SQLException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Properties;
-import java.util.function.Consumer;
 
 /**
  * Interface specifying the API to be implemented by a class providing
@@ -48,21 +46,18 @@ public interface RetryStrategy {
     boolean isRetryableException(SQLException ex);
 
     /**
-     * Determine if a retry attempt should proceed or not. This method should only be invoked
-     * after an exception is classified as retryable.
+     * Determine if a retry attempt should proceed or not.
      *
      * @param attempt the retry attempt number, 1-based
-     * @param startTime point in time when the initial invocation failed with a retryable exception
-     * @return true to proceed, false otherwise
+     * @return true to proceed, false to cancel
      */
-    boolean proceedWithRetry(int attempt, Instant startTime);
+    boolean proceedWithRetry(int attempt);
 
     /**
-     * An implementation may choose to suspend the calling thread for an unspecified period of time.
+     * Determine if a retry attempt should proceed or not.
      *
      * @param attempt the retry attempt number, 1-based
-     * @param startTime point in time when the initial invocation failed with a retryable exception
-     * @param callback callback function for the delay interval invoked before to the actual wait
+     * @return backoff duration
      */
-    void waitBeforeRetry(int attempt, Instant startTime, Consumer<Duration> callback);
+    Duration getBackoffDuration(int attempt);
 }

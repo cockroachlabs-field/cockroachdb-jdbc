@@ -9,7 +9,7 @@ import org.mockito.Mockito;
 import org.slf4j.Logger;
 
 @Tag("unit-test")
-public class RetryListenerTest {
+public class LoggingRetryListenerTest {
     @Test
     public void whenCallingListener_expectLogMessages() {
         Logger loggerMock = Mockito.mock(Logger.class);

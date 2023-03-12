@@ -6,10 +6,12 @@ import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
+import java.sql.SQLNonTransientException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Supplier;
 
 import org.postgresql.util.PSQLState;
 import org.slf4j.Logger;
@@ -73,6 +75,32 @@ public class CockroachDriver implements Driver {
         return url.replace(DRIVER_PREFIX, "jdbc:postgresql");
     }
 
+    private static Supplier<RetryListener> retryListenerSupplier;
+
+    private static Supplier<RetryStrategy> retryStrategySupplier;
+
+    /**
+     * Set a retry listener supplier that overrides any per-connection class name setting.
+     *
+     * @param retryListenerSupplier a global retry listener supplier, invoked after a new
+     * connection is opened
+     */
+    public static void setRetryListenerSupplier(
+            Supplier<RetryListener> retryListenerSupplier) {
+        CockroachDriver.retryListenerSupplier = retryListenerSupplier;
+    }
+
+    /**
+     * Set a retry strategy supplier that overrides any per-connection class name setting.
+     *
+     * @param retryStrategySupplier a global retry strategy supplier, invoked after a new
+     * connection is opened
+     */
+    public static void setRetryStrategySupplier(
+            Supplier<RetryStrategy> retryStrategySupplier) {
+        CockroachDriver.retryStrategySupplier = retryStrategySupplier;
+    }
+
     //////////////////////////////////////////////////////////////////////
 
     @Override
@@ -88,22 +116,24 @@ public class CockroachDriver implements Driver {
         logger.info("Opening connection to \"{}\" using {} with properties {}",
                 url, CockroachDriverInfo.DRIVER_FULL_NAME, info);
 
-        Properties defaults = new Properties();
+        final Properties defaults = new Properties();
         defaults.putAll(info);
 
         Properties properties = org.postgresql.Driver.parseURL(toDelegateURL(url), defaults);
         if (properties == null) {
-            throw new CockroachException("Error parsing JDBC URL", PSQLState.UNEXPECTED_ERROR);
+            throw new SQLNonTransientException("Error parsing JDBC URL");
         }
 
-        Connection psqlConnection = DriverManager.getConnection(toDelegateURL(url), info);
+        final Connection psqlConnection = DriverManager.getConnection(toDelegateURL(url), info);
 
-        ConnectionSettings connectionSettings = new ConnectionSettings();
+        final ConnectionSettings connectionSettings = new ConnectionSettings();
         connectionSettings.setUseCockroachMetadata(Boolean.parseBoolean(
                 CockroachProperty.USE_COCKROACH_METADATA.toDriverPropertyInfo(properties).value));
 
         if (Boolean.parseBoolean(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.toDriverPropertyInfo(properties).value)) {
-            connectionSettings.setQueryProcessor(new SelectForUpdateProcessor());
+            connectionSettings.setQueryProcessor(SelectForUpdateProcessor.INSTANCE);
+        } else {
+            connectionSettings.setQueryProcessor(SelectForUpdateProcessor.PASS_THROUGH);
         }
 
         if (Boolean.parseBoolean(CockroachProperty.RETRY_TRANSIENT_ERRORS.toDriverPropertyInfo(properties).value)) {
@@ -111,7 +141,8 @@ public class CockroachDriver implements Driver {
             connectionSettings.setRetryListener(loadRetryListener(properties));
 
             if (logger.isTraceEnabled()) {
-                connectionSettings.setMethodTraceLogger(MethodTraceLogger.createInstance(logger).setMasked(false));
+                connectionSettings.setMethodTraceLogger(
+                        MethodTraceLogger.createInstance(logger).setMasked(false));
             }
 
             CockroachConnection cockroachConnection = new CockroachConnection(psqlConnection, connectionSettings);
@@ -120,14 +151,15 @@ public class CockroachDriver implements Driver {
                     () -> {
                         Connection connection = DriverManager.getConnection(toDelegateURL(url), info);
                         connection.setAutoCommit(false);
-                        return new CockroachConnection(connection, connectionSettings);
+                        return new CockroachConnection(connection, connectionSettings); // Derive connection settings
                     });
         } else {
             if (Boolean.parseBoolean(
                     CockroachProperty.RETRY_CONNECTION_ERRORS.toDriverPropertyInfo(properties).value)) {
-                logger.warn("JDBC driver property \"{}\" requires also \"{}\" set be to true to take effect",
-                        CockroachProperty.RETRY_CONNECTION_ERRORS.getName(),
-                        CockroachProperty.RETRY_TRANSIENT_ERRORS.getName());
+                throw new InvalidConfigurationException("Driver property \""
+                        + CockroachProperty.RETRY_CONNECTION_ERRORS.getName() + "\" requires also \""
+                        + CockroachProperty.RETRY_TRANSIENT_ERRORS.getName() + "\" to be set",
+                        PSQLState.UNKNOWN_STATE);
             }
 
             return new CockroachConnection(psqlConnection, connectionSettings);
@@ -136,6 +168,13 @@ public class CockroachDriver implements Driver {
 
     @SuppressWarnings("unchecked")
     protected RetryStrategy loadRetryStrategy(Properties properties) throws SQLException {
+        // Supplier takes precedence
+        if (CockroachDriver.retryStrategySupplier != null) {
+            RetryStrategy retryStrategy = CockroachDriver.retryStrategySupplier.get();
+            retryStrategy.configure(properties);
+            return retryStrategy;
+        }
+
         String className = CockroachProperty.RETRY_STRATEGY_CLASSNAME.toDriverPropertyInfo(properties).value;
         try {
             Class<RetryStrategy> retryStrategyClass = (Class<RetryStrategy>) Class.forName(className);
@@ -144,13 +183,20 @@ public class CockroachDriver implements Driver {
             return retryStrategy;
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | InvocationTargetException |
                  NoSuchMethodException e) {
-            throw new CockroachException("Unable to create instance of retry strategy: " + className,
+            throw new InvalidConfigurationException("Unable to create instance of retry strategy: " + className,
                     PSQLState.UNEXPECTED_ERROR, e);
         }
     }
 
     @SuppressWarnings("unchecked")
     protected RetryListener loadRetryListener(Properties properties) throws SQLException {
+        // Supplier takes precedence
+        if (CockroachDriver.retryListenerSupplier != null) {
+            RetryListener retryListener = CockroachDriver.retryListenerSupplier.get();
+            retryListener.configure(properties);
+            return retryListener;
+        }
+
         String className = CockroachProperty.RETRY_LISTENER_CLASSNAME.toDriverPropertyInfo(properties).value;
         try {
             Class<RetryListener> retryListenerClass = (Class<RetryListener>) Class.forName(className);
@@ -159,7 +205,7 @@ public class CockroachDriver implements Driver {
             return retryListener;
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | InvocationTargetException |
                  NoSuchMethodException e) {
-            throw new CockroachException("Unable to create instance of retry listener: " + className,
+            throw new InvalidConfigurationException("Unable to create instance of retry listener: " + className,
                     PSQLState.UNEXPECTED_ERROR, e);
         }
     }

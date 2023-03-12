@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * Utility for formatting and parsing Duration's.
  */
 public abstract class DurationFormat {
-    private static final Pattern DURATION_PATTERN = Pattern.compile("([0-9]+)([smhdw])");
+    private static final Pattern DURATION_PATTERN = Pattern.compile("([0-9]+)\\s*([smhdw]+)", Pattern.CASE_INSENSITIVE);
 
     private DurationFormat() {
     }
@@ -28,6 +28,9 @@ public abstract class DurationFormat {
                 int ordinal = Integer.parseInt(matcher.group(1));
                 String token = matcher.group(2);
                 switch (token) {
+                    case "ms":
+                        instant = instant.plus(Duration.ofMillis(ordinal));
+                        break;
                     case "s":
                         instant = instant.plus(Duration.ofSeconds(ordinal));
                         break;

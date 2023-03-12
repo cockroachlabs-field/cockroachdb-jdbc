@@ -21,9 +21,7 @@ public abstract class ExceptionUtils {
             sb.append(indent)
                     .append(sqlWarning)
                     .append("\n").append(indent)
-                    .append("SQL State: ").append(state).append(" (").append(toPSQLState(state)).append(")")
-                    .append("\n").append(indent)
-                    .append("Vendor Error Code: ").append(sqlWarning.getErrorCode());
+                    .append("SQL State: ").append(state).append(" (").append(toPSQLState(state)).append(")");
             sqlWarning = sqlWarning.getNextWarning();
             if (sqlWarning != null) {
                 indent.append("  ");
@@ -42,10 +40,13 @@ public abstract class ExceptionUtils {
             String state = ex.getSQLState();
             sb.append(indent)
                     .append(ex)
-                    .append("\n").append(indent)
-                    .append("SQL State: ").append(state).append(" (").append(toPSQLState(state)).append(")")
-                    .append("\n").append(indent)
-                    .append("Vendor Error Code: ").append(ex.getErrorCode());
+                    .append("\n")
+                    .append(indent)
+                    .append("SQL State: ")
+                    .append(state)
+                    .append(" (")
+                    .append(toPSQLState(state))
+                    .append(")");
             ex = ex.getNextException();
             if (ex != null) {
                 indent.append("  ");

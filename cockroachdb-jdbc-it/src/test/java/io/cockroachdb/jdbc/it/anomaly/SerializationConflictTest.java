@@ -1,9 +1,10 @@
-package io.cockroachdb.jdbc.it;
+package io.cockroachdb.jdbc.it.anomaly;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -14,8 +15,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-@Tag("basic")
-public class BasicJdbcTest extends AbstractIntegrationTest {
+import io.cockroachdb.jdbc.it.AbstractIntegrationTest;
+
+@Tag("anomaly-test")
+public class SerializationConflictTest extends AbstractIntegrationTest {
     @FunctionalInterface
     private interface SQLCallable<T> {
         T call() throws SQLException;
@@ -97,40 +100,60 @@ public class BasicJdbcTest extends AbstractIntegrationTest {
             }
         }
 
-        executeAsync(() -> {
-            try (PreparedStatement p2 = t2.prepareStatement("select * from test where id in (1,2)")) {
-                try (ResultSet rs = p2.executeQuery()) {
-                    Assertions.assertEquals(true, rs.next());
-                    Assertions.assertEquals(1, rs.getInt(1));
-                    Assertions.assertEquals(10, rs.getInt(2));
-                    Assertions.assertEquals(true, rs.next());
-                    Assertions.assertEquals(2, rs.getInt(1));
-                    Assertions.assertEquals(20, rs.getInt(2));
-                    Assertions.assertEquals(false, rs.next());
-                }
+        try (PreparedStatement p2 = t2.prepareStatement("select * from test where id in (1,2)")) {
+            try (ResultSet rs = p2.executeQuery()) {
+                Assertions.assertEquals(true, rs.next());
+                Assertions.assertEquals(1, rs.getInt(1));
+                Assertions.assertEquals(10, rs.getInt(2));
+                Assertions.assertEquals(true, rs.next());
+                Assertions.assertEquals(2, rs.getInt(1));
+                Assertions.assertEquals(20, rs.getInt(2));
+                Assertions.assertEquals(false, rs.next());
             }
-            return null;
-        });
-
-        try (PreparedStatement u1 = t1.prepareStatement("update test set value = 11 where id = 1")) {
-            u1.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
         }
 
-        executeAsync(() -> {
-            t1.commit();
-            t1.close();
-            return null;
-        }, 2);
+        // Either transaction must fail
 
-        try (PreparedStatement u2 = t2.prepareStatement("update test set value = 22 where id = 2")) {
-            u2.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
+        Future<Boolean> f1 = executeAsync(() -> {
+            try (PreparedStatement p3 = t1.prepareStatement("update test set value = 11 where id = 1")) {
+                Assertions.assertEquals(1, p3.executeUpdate());
+                t1.commit();
+                return true;
+            } catch (SQLException e) {
+                t1.rollback();
+                return false;
+            }
+        }, 5);
+
+        Future<Boolean> f2 = executeAsync(() -> {
+            try (PreparedStatement p3 = t2.prepareStatement("update test set value = 22 where id = 2")) {
+                Assertions.assertEquals(1, p3.executeUpdate());
+                t2.commit();
+                return true;
+            } catch (SQLException e) {
+                t2.rollback();
+                return false;
+            }
+        }, 5);
+
+        boolean commitT1 = false;
+        boolean commitT2 = false;
+        try {
+            commitT1 = f1.get();
+        } catch (ExecutionException e) {
         }
 
-        t2.commit();
+        try {
+            commitT2 = f2.get();
+        } catch (ExecutionException e) {
+        }
+
+        if (commitT1) {
+            Assertions.assertFalse(commitT2);
+        }
+        if (commitT2) {
+            Assertions.assertFalse(commitT1);
+        }
 
         try (Connection t3 = dataSource.getConnection()) {
             t3.setAutoCommit(false);
@@ -138,16 +161,21 @@ public class BasicJdbcTest extends AbstractIntegrationTest {
             try (ResultSet rs = p4.executeQuery()) {
                 Assertions.assertEquals(true, rs.next());
                 Assertions.assertEquals(1, rs.getInt(1));
-                Assertions.assertEquals(11, rs.getInt(2));
+                if (commitT1) {
+                    Assertions.assertEquals(11, rs.getInt(2));
+                } else {
+                    Assertions.assertEquals(10, rs.getInt(2));
+                }
                 Assertions.assertEquals(true, rs.next());
                 Assertions.assertEquals(2, rs.getInt(1));
-                Assertions.assertEquals(22, rs.getInt(2));
+                if (commitT2) {
+                    Assertions.assertEquals(22, rs.getInt(2));
+                } else {
+                    Assertions.assertEquals(20, rs.getInt(2));
+                }
                 Assertions.assertEquals(false, rs.next());
             }
             t3.commit();
         }
-
-        t1.close();
-        t2.close();
     }
 }

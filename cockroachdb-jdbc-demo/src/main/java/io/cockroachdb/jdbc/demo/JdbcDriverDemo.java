@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
@@ -22,125 +23,37 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 
 import org.postgresql.PGProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariDataSource;
 
 import io.cockroachdb.jdbc.CockroachDriver;
 import io.cockroachdb.jdbc.CockroachProperty;
 import io.cockroachdb.jdbc.retry.EmptyRetryListener;
+import io.cockroachdb.jdbc.retry.LoggingRetryListener;
 import io.cockroachdb.jdbc.util.ExceptionUtils;
 import net.ttddyy.dsproxy.listener.logging.SLF4JLogLevel;
 import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 
 public class JdbcDriverDemo {
-    private static final Logger logger = LoggerFactory.getLogger(JdbcDriverDemo.class);
-
-    private int concurrency = Runtime.getRuntime().availableProcessors() * 2;
-
-    private boolean printErrors;
-
-    boolean clientRetry;
-
-    /**
-     * Run the demo workload using the given datasource.
-     *
-     * @param ds the datasource
-     */
-    public void run(DataSource ds) {
-        String version = JdbcUtils.select(ds, "select version()", resultSet -> {
-            if (resultSet.next()) {
-                return resultSet.getString(1);
-            }
-            return null;
-        });
-
-        logger.info("Connected to \"{}\"", version);
-
-        final List<Long> systemAccountIDs = findSystemAccountIDs(ds);
-        if (systemAccountIDs.isEmpty()) {
-            throw new IllegalStateException("No system accounts found!");
-
-        }
-        final List<Long> userAccountIDs = findUserAccountIDs(ds);
-        logger.info("Found {} system and {} user accounts - scheduling workers for each", systemAccountIDs.size(),
-                userAccountIDs.size());
-
-        // Unbounded thread pool is fine since the connection pool will throttle
-        final ExecutorService unboundedPool = Executors.newScheduledThreadPool(concurrency);
-
-        final Deque<Future<?>> futures = new ArrayDeque<>();
-
-        final Instant callTime = Instant.now();
-
-        systemAccountIDs.forEach(systemAccountId -> {
-            userAccountIDs.forEach(userAccountId -> {
-                futures.add(unboundedPool.submit(() -> {
-                    BigDecimal amount = new BigDecimal("100.00");
-                    List<AccountLeg> legs = new ArrayList<>();
-                    legs.add(new AccountLeg(systemAccountId, amount.negate()));
-                    legs.add(new AccountLeg(userAccountId, amount));
-                    if (clientRetry) {
-                        return JdbcUtils.executeWithinTransactionWithRetry(ds, transferFunds(legs));
-                    } else {
-                        return JdbcUtils.executeWithinTransaction(ds, transferFunds(legs));
-                    }
-                }));
-            });
-        });
-
-        logger.info("Scheduled {} futures", futures.size());
-
-        final int total = futures.size();
-        int commits = 0;
-        int rollbacks = 0;
-        int violations = 0;
-
-        while (!futures.isEmpty()) {
-            if (futures.size() % 100 == 0) {
-                logger.info("Awaiting completion ({} commits, {} rollbacks, {} violations, {} remaining)", commits,
-                        rollbacks, violations, futures.size());
-            }
-            try {
-                futures.pop().get();
-                commits++;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (ExecutionException e) {
-                Throwable throwable = ExceptionUtils.getMostSpecificCause(e);
-                if (throwable instanceof BusinessException) {
-                    violations++;
-                } else {
-                    rollbacks++;
-                }
-                if (printErrors) {
-                    logger.warn(throwable.toString());
-                }
-            }
-        }
-
-        unboundedPool.shutdownNow();
-
-        System.out.printf("\u001B[36m%,d commits\u001B[0m\n", commits);
-        System.out.printf("\u001B[36m%,d rollbacks\u001B[0m\n", rollbacks);
-        System.out.printf("\u001B[36m%.2f%% commit rate! %s\u001B[0m\n",
-                100 - (rollbacks / (double) (Math.max(1, total))) * 100.0,
-                rollbacks > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
-
-        System.out.printf("\u001B[36m%,d rule violations\u001B[0m\n", violations);
-        System.out.printf("\u001B[36m%.2f%% violation rate! %s\u001B[0m\n",
-                (violations / (double) (Math.max(1, total))) * 100.0,
-                violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
-
-        System.out.printf("\u001B[33m%s execution time\u001B[0m\n", Duration.between(callTime, Instant.now()));
-        System.out.printf("\u001B[33m%.2f avg TPS\u001B[0m\n",
-                ((double) total / (double) Duration.between(callTime, Instant.now()).toSeconds()));
+    private static void printf(AnsiColor color, String format, Object... args) {
+        System.out.printf("%s", color.getCode());
+        System.out.printf(format, args);
+        System.out.printf("%s", AnsiColor.RESET.getCode());
     }
 
+    private static void println(AnsiColor color, String format, Object... args) {
+        printf(color, format, args);
+        System.out.println();
+    }
+
+    private boolean stackTrace;
+
+    boolean retry;
+
+    boolean sfu;
+
     private List<Long> findUserAccountIDs(DataSource ds) {
-        return JdbcUtils.select(ds, "SELECT id,type FROM bank_account WHERE type='U' ORDER BY id", resultSet -> {
+        return JdbcUtils.select(ds, "SELECT id,type FROM bank_account WHERE type='U'", resultSet -> {
             List<Long> ids = new ArrayList<>();
             while (resultSet.next()) {
                 ids.add(resultSet.getLong(1));
@@ -150,7 +63,7 @@ public class JdbcDriverDemo {
     }
 
     private List<Long> findSystemAccountIDs(DataSource ds) {
-        return JdbcUtils.select(ds, "SELECT id,type FROM bank_account WHERE type='S' ORDER BY id", resultSet -> {
+        return JdbcUtils.select(ds, "SELECT id,type FROM bank_account WHERE type='S'", resultSet -> {
             List<Long> ids = new ArrayList<>();
             while (resultSet.next()) {
                 ids.add(resultSet.getLong(1));
@@ -159,8 +72,36 @@ public class JdbcDriverDemo {
         });
     }
 
+    private void updateBalance(Connection conn, Long id, BigDecimal balance) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE bank_account SET balance = ?, updated_at=clock_timestamp() WHERE id = ?")) {
+            ps.setBigDecimal(1, balance);
+            ps.setLong(2, id);
+            if (ps.executeUpdate() != 1) {
+                throw new DataAccessException("Rows affected != 1  for " + id);
+            }
+        }
+    }
+
+    private BigDecimal readBalance(Connection conn, Long id) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT balance FROM bank_account WHERE id = ?")) {
+            ps.setLong(1, id);
+
+            try (ResultSet res = ps.executeQuery()) {
+                if (!res.next()) {
+                    throw new DataAccessException("Account not found: " + id);
+                }
+                return res.getBigDecimal("balance");
+            }
+        }
+    }
+
     private ConnectionCallback<Void> transferFunds(List<AccountLeg> legs) {
         return conn -> {
+            if (sfu) {
+                conn.createStatement().execute("SET implicitSelectForUpdate = true");
+            }
+
             BigDecimal checksum = BigDecimal.ZERO;
 
             for (AccountLeg leg : legs) {
@@ -184,28 +125,112 @@ public class JdbcDriverDemo {
         };
     }
 
-    private BigDecimal readBalance(Connection conn, Long id) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT balance FROM bank_account WHERE id = ?")) {
-            ps.setLong(1, id);
+    /**
+     * Run the demo workload using the given datasource.
+     *
+     * @param ds the datasource
+     */
+    public void run(DataSource ds) {
+        String version = JdbcUtils.select(ds, "select version()", resultSet -> {
+            if (resultSet.next()) {
+                return resultSet.getString(1);
+            }
+            return null;
+        });
 
-            try (ResultSet res = ps.executeQuery()) {
-                if (!res.next()) {
-                    throw new DataAccessException("Account not found: " + id);
+        println(AnsiColor.BRIGHT_YELLOW, "Connected to \"%s\"", version);
+
+        final List<Long> systemAccountIDs = findSystemAccountIDs(ds);
+        if (systemAccountIDs.isEmpty()) {
+            throw new IllegalStateException("No system accounts found!");
+        }
+
+        final List<Long> userAccountIDs = findUserAccountIDs(ds);
+        if (userAccountIDs.isEmpty()) {
+            throw new IllegalStateException("No user accounts found!");
+        }
+
+        println(AnsiColor.BRIGHT_YELLOW, "Found %,d system and %,d user accounts - scheduling workers for each",
+                systemAccountIDs.size(),
+                userAccountIDs.size());
+
+        // Unbounded thread pool is fine since the connection pool will throttle
+        final ExecutorService unboundedPool = Executors.newScheduledThreadPool(Runtime.getRuntime()
+                .availableProcessors());
+
+        final Deque<Future<?>> futures = new ArrayDeque<>();
+
+        final Instant callTime = Instant.now();
+
+        Collections.shuffle(systemAccountIDs);
+        Collections.shuffle(userAccountIDs);
+
+        userAccountIDs.forEach(userAccountId -> {
+            systemAccountIDs.forEach(systemAccountId -> {
+                futures.add(unboundedPool.submit(() -> {
+                    BigDecimal amount = new BigDecimal("100.00");
+                    List<AccountLeg> legs = new ArrayList<>();
+                    legs.add(new AccountLeg(systemAccountId, amount.negate()));
+                    legs.add(new AccountLeg(userAccountId, amount));
+                    if (retry) {
+                        return JdbcUtils.executeWithinTransactionWithRetry(ds, transferFunds(legs));
+                    } else {
+                        return JdbcUtils.executeWithinTransaction(ds, transferFunds(legs));
+                    }
+                }));
+            });
+        });
+
+        println(AnsiColor.BRIGHT_YELLOW, "Scheduled %,d futures", futures.size());
+
+        final int total = futures.size();
+        int commits = 0;
+        int rollbacks = 0;
+        int violations = 0;
+
+        while (!futures.isEmpty()) {
+            if (futures.size() % 100 == 0) {
+                println(AnsiColor.BRIGHT_YELLOW,
+                        "Awaiting completion (%,d commits, %,d rollbacks, %,d violations, %,d remaining)", commits,
+                        rollbacks, violations, futures.size());
+            }
+            try {
+                futures.pop().get();
+                commits++;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (ExecutionException e) {
+                Throwable throwable = ExceptionUtils.getMostSpecificCause(e);
+                if (throwable instanceof BusinessException) {
+                    violations++;
+                } else {
+                    rollbacks++;
                 }
-                return res.getBigDecimal("balance");
+                if (stackTrace) {
+                    println(AnsiColor.BRIGHT_RED, "%s", throwable);
+                }
             }
         }
-    }
 
-    private void updateBalance(Connection conn, Long id, BigDecimal balance) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "UPDATE bank_account SET balance = ?, updated_at=clock_timestamp() WHERE id = ?")) {
-            ps.setBigDecimal(1, balance);
-            ps.setLong(2, id);
-            if (ps.executeUpdate() != 1) {
-                throw new DataAccessException("Rows affected != 1  for " + id);
-            }
-        }
+        unboundedPool.shutdownNow();
+
+        println(AnsiColor.BRIGHT_GREEN, "%,d commits", commits);
+        println(AnsiColor.BRIGHT_GREEN, "%,d rollbacks", rollbacks);
+        printf(AnsiColor.BRIGHT_GREEN, "%.2f%% commit rate!",
+                100 - (rollbacks / (double) (Math.max(1, total))) * 100.0);
+        println(rollbacks > 0 ? AnsiColor.BOLD_BRIGHT_RED : AnsiColor.BOLD_BRIGHT_GREEN, " %s",
+                rollbacks > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
+
+        println(AnsiColor.BRIGHT_GREEN, "%,d rule violations", violations);
+        printf(AnsiColor.BRIGHT_GREEN, "%.2f%% violation rate!",
+                (violations / (double) (Math.max(1, total))) * 100.0);
+        println(violations > 0 ? AnsiColor.BOLD_BRIGHT_RED : AnsiColor.BOLD_BRIGHT_GREEN, " %s",
+                violations > 0 ? "(╯°□°)╯︵ ┻━┻" : "¯\\\\_(ツ)_/¯");
+
+        println(AnsiColor.BRIGHT_GREEN, "%s execution time", Duration.between(callTime, Instant.now()));
+        println(AnsiColor.BRIGHT_GREEN, "%.2f avg TPS",
+                ((double) total / (double) Duration.between(callTime, Instant.now()).toSeconds()));
     }
 
     public static void main(String[] args) throws Exception {
@@ -219,67 +244,108 @@ public class JdbcDriverDemo {
 
         boolean traceSQL = false;
 
-        boolean sfu = false;
+        boolean sfuConnectionScope = false;
+
+        boolean sfuTransactionScope = false;
 
         boolean driverRetry = false;
 
         boolean clientRetry = false;
 
-        int concurrency = Runtime.getRuntime().availableProcessors() * 2;
+        int poolSize = Runtime.getRuntime().availableProcessors() * 2;
 
-        boolean printErrors = false;
+        boolean verbose = false;
+
+        boolean stackTrace = false;
 
         boolean printHelpAndQuit = false;
 
         LinkedList<String> argsList = new LinkedList<>(Arrays.asList(args));
         while (!argsList.isEmpty()) {
             String arg = argsList.pop();
-            if (arg.startsWith("--concurrency")) {
-                concurrency = Integer.parseInt(argsList.pop());
-            } else if (arg.startsWith("--url")) {
-                url = argsList.pop();
-            } else if (arg.startsWith("--user")) {
-                username = argsList.pop();
-            } else if (arg.startsWith("--password")) {
-                password = argsList.pop();
-            } else if (arg.startsWith("--isolation")) {
-                isolationLevel = argsList.pop();
-            } else if (arg.startsWith("--trace")) {
+            if (arg.equals("--poolSize")) {
+                poolSize = Integer.parseInt(argsList.pop());
+            } else if (arg.equals("--url")) {
+                if (argsList.isEmpty()) {
+                    println(AnsiColor.BOLD_BRIGHT_RED, "Expected URL after: " + arg);
+                    printHelpAndQuit = true;
+                } else {
+                    url = argsList.pop();
+                }
+            } else if (arg.equals("--user")) {
+                if (argsList.isEmpty()) {
+                    println(AnsiColor.BOLD_BRIGHT_RED, "Expected username after: " + arg);
+                    printHelpAndQuit = true;
+                } else {
+                    username = argsList.pop();
+                }
+            } else if (arg.equals("--password")) {
+                if (argsList.isEmpty()) {
+                    println(AnsiColor.BOLD_BRIGHT_RED, "Expected password after: " + arg);
+                    printHelpAndQuit = true;
+                } else {
+                    password = argsList.pop();
+                }
+            } else if (arg.equals("--isolation")) {
+                if (argsList.isEmpty()) {
+                    println(AnsiColor.BOLD_BRIGHT_RED, "Expected isolation level name after: " + arg);
+                    printHelpAndQuit = true;
+                } else {
+                    isolationLevel = argsList.pop();
+                }
+            } else if (arg.equals("--trace")) {
                 traceSQL = true;
             } else if (arg.startsWith("--sfu")) {
-                sfu = true;
-            } else if (arg.startsWith("--driverRetry")) {
-                driverRetry = true;
-            } else if (arg.startsWith("--clientRetry")) {
-                clientRetry = true;
-            } else if (arg.startsWith("--printErrors")) {
-                printErrors = true;
+                if ("txn".equals(argsList.peek())) {
+                    argsList.pop();
+                    sfuTransactionScope = true;
+                } else {
+                    sfuConnectionScope = true;
+                }
+            } else if (arg.startsWith("--retry")) {
+                if ("client".equals(argsList.peek())) {
+                    argsList.pop();
+                    clientRetry = true;
+                } else {
+                    driverRetry = true;
+                }
+            } else if (arg.equals("--verbose")) {
+                verbose = true;
+            } else if (arg.equals("--stackTrace")) {
+                stackTrace = true;
+            } else if (arg.equals("--help")) {
+                printHelpAndQuit = true;
             } else if (arg.startsWith("--")) {
-                System.out.println("Unrecognized option: " + arg);
+                println(AnsiColor.BOLD_BRIGHT_RED, "Unrecognized option: " + arg);
                 printHelpAndQuit = true;
                 break;
             } else {
-                System.out.println("Unrecognized argument: " + arg);
+                println(AnsiColor.BOLD_BRIGHT_RED, "Unrecognized argument: " + arg);
                 printHelpAndQuit = true;
                 break;
             }
         }
 
         if (printHelpAndQuit) {
-            System.out.println("Usage: java -jar cockroachdb-jdbc-demo.jar [options]");
-            System.out.println("Options include: (defaults in parenthesis)");
-            System.out.println("--sfu               enable implicit SFU (false)");
-            System.out.println("--driverRetry       enable JDBC driver transaction retries (false)");
-            System.out.println("--clientRetry       enable client/app transaction retries (false)");
-            System.out.println("--trace             enable SQL tracing (false)");
-            System.out.println("--printErrors       print exceptions to console (false)");
-            System.out.println("--isolation <level> transaction isolation level when using psql (READ_COMMITTED)");
-            System.out.println("--concurrency <N>   number of threads (system x 2)");
-            System.out.println(
-                    "--url <url>         JDBC connection URL (jdbc:cockroachdb://localhost:26257/jdbc_test)");
-            System.out.println("--user <user>       JDBC login user name (root)");
-            System.out.println("--password <secret> JDBC login password (empty)");
-            System.exit(0);
+            System.out.println();
+            println(AnsiColor.BOLD_BRIGHT_WHITE, "Usage: java -jar cockroachdb-jdbc-demo.jar [options]");
+            println(AnsiColor.BOLD_BRIGHT_WHITE, "Options include: (defaults in parenthesis)");
+            println(AnsiColor.BRIGHT_CYAN,
+                    "--url <url>         Connection URL (jdbc:cockroachdb://localhost:26257/jdbc_test)");
+            println(AnsiColor.BRIGHT_CYAN, "--user <user>       Login user name (root)");
+            println(AnsiColor.BRIGHT_CYAN, "--password <secret> Login password (empty)");
+            println(AnsiColor.BRIGHT_CYAN,
+                    "--isolation <level> Transaction isolation level when using psql (READ_COMMITTED)");
+            println(AnsiColor.BRIGHT_CYAN, "--poolSize <N>      Connection pool size (client vCPUs x 2)");
+            println(AnsiColor.BRIGHT_CYAN,
+                    "--sfu [txn]         Enable implicit SFU. Optionally with transaction scope. (none)");
+            println(AnsiColor.BRIGHT_CYAN,
+                    "--retry [client]    Enable transaction retries. Optionally client-side. (none)");
+            println(AnsiColor.BRIGHT_CYAN, "--trace             Enable SQL trace logging (false)");
+            println(AnsiColor.BRIGHT_CYAN, "--verbose           Verbose logging to console (false)");
+            println(AnsiColor.BRIGHT_CYAN, "--stackTrace        Print stack traces to console (false)");
+
+            System.exit(1);
         }
 
         final HikariDataSource hikariDS = new HikariDataSource();
@@ -287,8 +353,8 @@ public class JdbcDriverDemo {
         hikariDS.setUsername(username);
         hikariDS.setPassword(password);
         hikariDS.setAutoCommit(true);
-        hikariDS.setMaximumPoolSize(concurrency);
-        hikariDS.setMinimumIdle(concurrency / 2);
+        hikariDS.setMaximumPoolSize(poolSize);
+        hikariDS.setMinimumIdle(poolSize / 2);
         hikariDS.setMaxLifetime(TimeUnit.MINUTES.toMillis(3));
         hikariDS.setIdleTimeout(TimeUnit.MINUTES.toMillis(1));
         hikariDS.setConnectionTimeout(TimeUnit.MINUTES.toMillis(1));
@@ -298,15 +364,26 @@ public class JdbcDriverDemo {
 
         if (url.startsWith(CockroachDriver.DRIVER_PREFIX)) {
             hikariDS.setDriverClassName(CockroachDriver.class.getName());
-            hikariDS.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), sfu);
+            hikariDS.addDataSourceProperty(CockroachProperty.IMPLICIT_SELECT_FOR_UPDATE.getName(), sfuConnectionScope);
             hikariDS.addDataSourceProperty(CockroachProperty.RETRY_TRANSIENT_ERRORS.getName(), driverRetry);
             hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_ATTEMPTS.getName(), "30");
             hikariDS.addDataSourceProperty(CockroachProperty.RETRY_MAX_BACKOFF_TIME.getName(), "15000");
-            hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(),
-                    EmptyRetryListener.class.getName());
+
+            if (verbose) {
+                hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(),
+                        LoggingRetryListener.class.getName());
+            } else {
+                hikariDS.addDataSourceProperty(CockroachProperty.RETRY_LISTENER_CLASSNAME.getName(),
+                        EmptyRetryListener.class.getName());
+            }
         } else {
             hikariDS.setTransactionIsolation("TRANSACTION_" + isolationLevel);
         }
+
+        println(AnsiColor.BOLD_BRIGHT_WHITE, "Starting JDBC driver demo");
+        println(AnsiColor.BRIGHT_WHITE, "url: %s", url);
+        println(AnsiColor.BRIGHT_WHITE, "username: %s", username);
+        println(AnsiColor.BRIGHT_WHITE, "password: ***", password);
 
         DataSource ds = traceSQL
                 ? ProxyDataSourceBuilder.create(hikariDS)
@@ -319,9 +396,9 @@ public class JdbcDriverDemo {
         SchemaSupport.setupSchema(ds);
 
         JdbcDriverDemo demo = new JdbcDriverDemo();
-        demo.concurrency = concurrency;
-        demo.printErrors = printErrors;
-        demo.clientRetry = clientRetry;
+        demo.stackTrace = stackTrace;
+        demo.retry = clientRetry;
+        demo.sfu = sfuTransactionScope;
         demo.run(ds);
     }
 }
