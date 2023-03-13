@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.cockroachdb.jdbc</groupId>
         <artifactId>cockroachdb-jdbc-parent</artifactId>
-        <version>0.9.4-SNAPSHOT</version>
+        <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -19,8 +19,8 @@
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
-        <spring.boot.version>3.0.3</spring.boot.version>
-        <spring.data.version>3.0.2</spring.data.version>
+        <spring.boot.version>3.0.4</spring.boot.version>
+        <spring.data.version>3.0.3</spring.data.version>
         <spring.shell.version>3.0.1</spring.shell.version>
         <datasource-proxy.version>1.8.1</datasource-proxy.version>
         <hikari.version>5.0.1</hikari.version>
