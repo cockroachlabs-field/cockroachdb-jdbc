@@ -1,5 +1,9 @@
 # CockroachDB JDBC Driver
 
+This repository is obsolete and has been superseded 
+by [cockroachdb-jdbc](https://github.com/cloudneutral/cockroachdb-jdbc).
+
+---
 [![Java CI](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml/badge.svg?branch=main)](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
 [![coverage](.github/badges/jacoco.svg)](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
 [![branches coverage](.github/badges/branches.svg)](https://github.com/cockroachlabs-field/cockroachdb-jdbc/actions/workflows/maven-publish.yml)
